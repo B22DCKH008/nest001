@@ -1,4 +1,4 @@
-import { Injectable, Scope } from '@nestjs/common';
+import { Injectable, NotFoundException, Scope } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { User } from 'src/entities/User';
@@ -57,5 +57,32 @@ export class UserService {
             }
         }
         return false;
+    }
+
+    findAll(): Promise<User[]> {
+        return this.userRepository.find();
+    }
+
+    findById(id: number): Promise<User | null> {
+        return this.userRepository.findOne({ where: { id } });
+    }
+
+    async update(id: number, userData: Partial<User>): Promise<User> {
+        const user = await this.findById(id);
+        if (!user) {
+            throw new NotFoundException('Người dùng không tìm thấy');
+        }
+        userData.updated_at = new Date();
+        await this.userRepository.update(id, userData);
+        return this.userRepository.findOne({ where: { id } }) as Promise<User>;
+    }
+
+    async delete(id: number): Promise<User> {
+        const user = await this.findById(id);
+        if (!user) {
+            throw new NotFoundException('Người dùng không tìm thấy');
+        }
+        await this.userRepository.delete(id);
+        return user;
     }
 }

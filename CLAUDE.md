@@ -41,7 +41,9 @@ src/
   middleware/logging/     ← logging.middleware.ts
   modules/
     auth/                 ← auth.module|controller|service, jwt.strategy, local.strategy
+      dto/                ← register.dto.ts
     user/                 ← user.module|controller|service
+      dto/                ← update-user.dto.ts
     product/
       dto/                ← create-product.dto.ts, update-product.dto.ts
       product.module|controller|service.ts
@@ -189,6 +191,10 @@ DB_PASSWORD=
 | POST | `/auth/login` | LocalAuthGuard | Đăng nhập, trả access + refresh token |
 | GET | `/auth/profile` | JwtAuthGuard | Thông tin user hiện tại |
 | POST | `/auth/refresh-token` | — | Cấp lại access token |
+| GET | `/user` | JwtAuthGuard | Danh sách tất cả users |
+| GET | `/user/:id` | JwtAuthGuard | Chi tiết user theo id |
+| PATCH | `/user/:id` | JwtAuthGuard | Cập nhật user (name, email) |
+| DELETE | `/user/:id` | JwtAuthGuard | Xóa user |
 | GET | `/product` | — | Danh sách sản phẩm |
 | GET | `/product/:id` | — | Chi tiết sản phẩm |
 | POST | `/product` | — | Tạo sản phẩm |
@@ -222,3 +228,61 @@ npm run format        # Prettier format
 6. Import `TypeOrmModule.forFeature([NewFeature])` trong module
 7. Import module mới vào `app.module.ts`
 8. Tạo spec files: `*.controller.spec.ts`, `*.service.spec.ts`
+
+---
+
+## Lịch sử session & trạng thái hiện tại
+
+### Session 2026-05-05 — Code quality + Unit tests + UserController
+
+#### Những gì đã hoàn thành (toàn bộ 2 session ngày 05/05)
+
+**Code quality fixes (tất cả đã apply):**
+- `ParseIntPipe` đã thêm vào tất cả `@Param('id')` trong `ProductController` (`findOne`, `update`, `delete`) — trước đó `id` nhận về **string** ở runtime dù TypeScript khai báo `number`
+- `src/modules/auth/dto/register.dto.ts` đã tạo mới — `POST /auth/register` trước đó nhận `any`, nay có validation đầy đủ
+- `AuthController.register()` đã đổi từ `userData: any` → `RegisterDto`
+- `UserController` đã xóa `console.log('UserController constructor')` khỏi constructor
+- `ProductController` đã xóa `@UsePipes(new ValidationPipe({transform: true}))` và unused imports (`HttpException`, `HttpStatus`, `UsePipes`, `ValidationPipe`)
+
+**UserModule — implement đầy đủ:**
+- `src/modules/user/dto/update-user.dto.ts` tạo mới — có `name?` và `email?` với validation tiếng Việt
+- `UserService` đã thêm 4 methods mới: `findAll()`, `findById(id)`, `update(id, dto)`, `delete(id)`
+- `UserController` đã implement 4 routes: `GET /user`, `GET /user/:id`, `PATCH /user/:id`, `DELETE /user/:id` — tất cả đều yêu cầu `JwtAuthGuard`
+
+**Unit tests — trạng thái: 48/48 pass, 8 test suites:**
+| File spec | Tests | Ghi chú |
+|---|---|---|
+| `product/product.service.spec.ts` | 7 | findAll, find (found/NotFoundException), create (timestamps), update, delete ×2 |
+| `auth/auth.service.spec.ts` | 3 | login (tokens + saveRefreshToken), verifyRefreshToken (valid/invalid/unknown) |
+| `product/product.controller.spec.ts` | 6 | getAll, findOne (found/NotFoundException), create, update, delete |
+| `auth/auth.controller.spec.ts` | 5 | register, login, profile, refreshToken (valid/BadRequestException) |
+| `user/user.service.spec.ts` | 18 | createUser, findByEmail, validateUser ×3, saveRefreshToken ×2, verifyRefreshToken ×3, findAll, findById ×2, update ×2, delete ×2 |
+| `user/user.controller.spec.ts` | 5 | findAll, findOne (found/NotFoundException), update, delete |
+
+**Jest config fix — `package.json`:**
+- Đã thêm `moduleNameMapper: { "^src/(.*)$": "<rootDir>/$1" }` — cần thiết vì Jest không đọc `baseUrl` từ `tsconfig.json`
+
+#### Quyết định kỹ thuật quan trọng
+
+1. **Không dùng `@UsePipes` trên controller** — global `ValidationPipe` (đăng ký trong `main.ts`) đã xử lý toàn bộ, thêm lại là redundant và vi phạm convention DRY
+
+2. **Thứ tự `jwtService.sign` trong `AuthService.login()`** — lần gọi đầu tiên tạo **refresh token** (có `expiresIn` từ config), lần thứ hai tạo **access token**. Quan trọng khi viết test để đặt `mockReturnValueOnce` đúng thứ tự
+
+3. **Mock pattern cho TypeORM trong test** — dùng `getRepositoryToken(Entity)` từ `@nestjs/typeorm` để provide mock repository, không kết nối DB thật
+
+4. **`findById` trả `null`, không throw** — `UserController.findOne` xử lý null và throw `NotFoundException`; nhưng `update` và `delete` trong service tự throw NotFoundException (vì chúng cần đảm bảo tính toàn vẹn). Pattern: read-only methods trả null, write methods throw exception
+
+5. **`mockRepository.save` dùng `mockImplementation` không phải `mockResolvedValue`** — vì service mutate object TRƯỚC khi gọi save (gán timestamps, hash password), nên snapshot bằng `mockResolvedValue({ ...obj })` bắt giá trị CŨ trước mutation. `mockImplementation((u) => Promise.resolve({ ...u, id: 1 }))` bắt giá trị ĐÃ mutate
+
+6. **Thiếu import exception class trong spec file gây worker crash trên Node.js v22** — `NotFoundException` dùng trong `.rejects.toThrow(NotFoundException)` mà không import sẽ là `undefined` ở runtime. Node.js v22 treat unhandled promise rejection là fatal, crash toàn bộ worker. Lỗi này không hiện ra như TypeScript compile error mà là process crash
+
+#### Bước tiếp theo (session sau)
+
+**Ưu tiên trung bình:**
+- [ ] Tích hợp BullMQ — package đã cài (`@nestjs/bullmq` + `bullmq`), chưa implement queue nào. Cần quyết định queue dùng cho tác vụ gì (ví dụ: gửi email, xử lý ảnh...)
+- [ ] Tích hợp Redis cache — package đã cài (`@nestjs/cache-manager` + `cache-manager-ioredis-yet`), chưa dùng. Cần quyết định cache endpoint nào (ví dụ: `GET /product` danh sách)
+
+**Ưu tiên thấp:**
+- [ ] Swagger/OpenAPI documentation (`@nestjs/swagger`) — chưa cài, chưa dùng
+- [ ] E2E tests trong `test/` — hiện chỉ có NestJS stub mặc định
+- [ ] Guard `POST /product` và các write endpoints — hiện chưa yêu cầu auth, ai cũng có thể tạo/sửa/xóa sản phẩm

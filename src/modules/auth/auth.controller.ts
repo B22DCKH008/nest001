@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { UserService } from '../user/user.service';
 import { LocalAuthGuard } from 'src/guards/local-auth.guard';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
+import { RegisterDto } from './dto/register.dto';
 
 
 @Controller('auth')
@@ -12,8 +13,8 @@ export class AuthController {
     private readonly userService: UserService,
   ) {}
 
-  @Post('register') // localhost:3000/auth/register
-  register(@Body() userData: any) {
+  @Post('register')
+  register(@Body() userData: RegisterDto) {
     return this.userService.createUser(userData);
   }
   
