@@ -105,7 +105,8 @@ export class EntityName {
 | `nest-winston` + `winston` | Structured logging |
 | `@nestjs/config` | Đọc biến môi trường qua `ConfigService` |
 | `@nestjs/bullmq` + `bullmq` | Task queue (đã cài, chưa dùng) |
-| `@nestjs/cache-manager` + `cache-manager-ioredis-yet` | Redis cache (đã cài, chưa dùng) |
+| `@nestjs/cache-manager` + `cache-manager-ioredis-yet` | Redis cache — cache `GET /product` ở service layer, TTL 60s |
+| `@nestjs/swagger` | Swagger UI tại `/api` — docs toàn bộ API |
 
 ---
 
@@ -175,6 +176,9 @@ DB_PORT=3306
 DB_NAME=nestjs001
 DB_USERNAME=root
 DB_PASSWORD=
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
 ```
 
 - Đọc qua `ConfigService` (inject từ `@nestjs/config`) hoặc `process.env.*`
@@ -195,11 +199,27 @@ DB_PASSWORD=
 | GET | `/user/:id` | JwtAuthGuard | Chi tiết user theo id |
 | PATCH | `/user/:id` | JwtAuthGuard | Cập nhật user (name, email) |
 | DELETE | `/user/:id` | JwtAuthGuard | Xóa user |
-| GET | `/product` | — | Danh sách sản phẩm |
+| GET | `/product` | — | Danh sách sản phẩm (cached 60s, kèm category) |
 | GET | `/product/:id` | — | Chi tiết sản phẩm |
-| POST | `/product` | — | Tạo sản phẩm |
-| PATCH | `/product/:id` | — | Cập nhật sản phẩm |
-| DELETE | `/product/:id` | — | Xóa sản phẩm |
+| POST | `/product` | JWT + admin | Tạo sản phẩm |
+| PATCH | `/product/:id` | JWT + admin | Cập nhật sản phẩm |
+| DELETE | `/product/:id` | JWT + admin | Xóa sản phẩm |
+| GET | `/category` | — | Danh sách danh mục |
+| GET | `/category/:id` | — | Chi tiết danh mục |
+| POST | `/category` | JWT + admin | Tạo danh mục |
+| PATCH | `/category/:id` | JWT + admin | Cập nhật danh mục |
+| DELETE | `/category/:id` | JWT + admin | Xóa danh mục |
+| GET | `/cart` | JwtAuthGuard | Cart của user (tự tạo nếu chưa có) |
+| POST | `/cart/items` | JwtAuthGuard | Thêm item (đã có → cộng quantity) |
+| PATCH | `/cart/items/:id` | JwtAuthGuard | Đổi quantity (0 = xóa item) |
+| DELETE | `/cart/items/:id` | JwtAuthGuard | Xóa một item |
+| DELETE | `/cart` | JwtAuthGuard | Xóa toàn bộ cart |
+| POST | `/order/checkout` | JwtAuthGuard | Tạo order từ cart, clear cart |
+| GET | `/order` | JwtAuthGuard | Orders của user hiện tại |
+| GET | `/order/:id` | JwtAuthGuard | Chi tiết order (chỉ của mình) |
+| PATCH | `/order/:id/cancel` | JwtAuthGuard | Hủy order (chỉ khi pending) |
+| GET | `/order/admin/all` | JWT + admin | Tất cả orders (admin) |
+| PATCH | `/order/admin/:id/status` | JWT + admin | Đổi status bất kỳ (admin) |
 
 ---
 
@@ -276,13 +296,122 @@ npm run format        # Prettier format
 
 6. **Thiếu import exception class trong spec file gây worker crash trên Node.js v22** — `NotFoundException` dùng trong `.rejects.toThrow(NotFoundException)` mà không import sẽ là `undefined` ở runtime. Node.js v22 treat unhandled promise rejection là fatal, crash toàn bộ worker. Lỗi này không hiện ra như TypeScript compile error mà là process crash
 
+---
+
+### Session 2026-05-07 — Security + Redis Cache
+
+#### Những gì đã hoàn thành
+
+**Security — JwtAuthGuard cho Product write endpoints:**
+- `ProductController`: thêm `@UseGuards(JwtAuthGuard)` cho `POST /product`, `PATCH /product/:id`, `DELETE /product/:id`
+- `GET /product` và `GET /product/:id` vẫn public (không cần login để browse)
+- `product.controller.spec.ts`: thêm `.overrideGuard(JwtAuthGuard).useValue({ canActivate: () => true })`
+
+**Redis Cache — service layer cho `GET /product`:**
+- `app.module.ts`: thêm `CacheModule.registerAsync({ isGlobal: true, store: redisStore, TTL: 60s })`
+- `ProductService`: inject `CACHE_MANAGER`, sửa `findAll()` check cache trước, `create/update/delete` gọi `cacheManager.del('products_all')` để invalidate
+- `.env`: thêm `REDIS_HOST=localhost`, `REDIS_PORT=6379`
+- `product.service.spec.ts`: thêm mock `CACHE_MANAGER`, thêm test cache hit/miss cho `findAll`, verify `del()` được gọi trong write methods
+
+**Unit tests — trạng thái: 49/49 pass, 8 test suites:**
+| File spec | Tests | Ghi chú |
+|---|---|---|
+| `product/product.service.spec.ts` | 8 | +cache hit, +cache miss (findAll), +verify del() trong create/update/delete |
+| `product/product.controller.spec.ts` | 6 | guard override thêm — số test không đổi |
+| `auth/auth.service.spec.ts` | 3 | không thay đổi |
+| `auth/auth.controller.spec.ts` | 5 | không thay đổi |
+| `user/user.service.spec.ts` | 18 | không thay đổi |
+| `user/user.controller.spec.ts` | 5 | không thay đổi |
+
+#### Quyết định kỹ thuật quan trọng
+
+7. **Cache invalidation strategy: `del` thay vì TTL-only** — Write methods (`create/update/delete`) gọi `cacheManager.del(PRODUCTS_CACHE_KEY)` ngay sau khi mutate DB. Tránh stale cache tối đa 60s sau khi thay đổi dữ liệu.
+
+8. **Service layer cache, không dùng `CacheInterceptor` trên controller** — Inject `CACHE_MANAGER` vào service cho phép invalidate chủ động. `CacheInterceptor` ở controller level không có cơ chế invalidate khi data thay đổi.
+
+9. **`PRODUCTS_CACHE_KEY` là constant module-level** — `'products_all'` dùng ở cả `findAll` (set/get) và write methods (del). Đặt ở module scope tránh typo khi gọi del.
+
+---
+
+### Session 2026-05-07 (tiếp) — Category + Swagger + RBAC + Cart + Order + E2E
+
+#### Những gì đã hoàn thành
+
+**Bug fixes:**
+- `UpdateProductDto` thiếu toàn bộ `class-validator` decorators → ValidationPipe `forbidNonWhitelisted: true` reject body → 400. Fix: thêm đầy đủ decorators + `@IsOptional()`
+- `import { Cache } from 'cache-manager'` gây lỗi TS1272 với `isolatedModules: true`. Fix: `import type { Cache }`
+
+**Category module** — CRUD đầy đủ tại `/category`:
+- `src/entities/Category.ts` — `OneToMany` với Product
+- `src/entities/Product.ts` — thêm `ManyToOne` nullable tới Category (`category_id` FK)
+- `GET /product` và `GET /product/:id` giờ load kèm category object
+
+**Swagger/OpenAPI** — `GET /api` tự động:
+- Cài `@nestjs/swagger`, setup `SwaggerModule` trong `main.ts`
+- `@ApiTags`, `@ApiOperation`, `@ApiResponse` trên tất cả 4 controllers (auth/user/product/category)
+- `@ApiBearerAuth('access-token')` trên endpoints có guard
+- `@ApiProperty` / `@ApiPropertyOptional` trên tất cả DTOs
+- Required properties trong DTOs dùng `!` (definite assignment assertion) để tránh TS2564
+
+**RBAC — phân quyền admin/user:**
+- `src/entities/User.ts`: thêm `role: 'user' | 'admin'` với `DEFAULT 'user'`
+- `src/decorators/roles.decorator.ts`: `@Roles('admin')` via `SetMetadata`
+- `src/guards/roles.guard.ts`: đọc `request.user.role`, trả `false` → 403
+- Áp dụng `@UseGuards(JwtAuthGuard, RolesGuard) + @Roles('admin')` cho: POST/PATCH/DELETE product, POST/PATCH/DELETE category, GET /user (all), DELETE /user/:id
+
+**Cart module:**
+- `src/entities/Cart.ts` — OneToOne User, OneToMany CartItem
+- `src/entities/CartItem.ts` — ManyToOne Cart + Product (eager: true), có `quantity`
+- Logic: `addItem` cộng quantity nếu đã có, tạo mới nếu chưa; `updateItem` với quantity=0 tự xóa item
+
+**Order module:**
+- `src/entities/Order.ts` — status: `pending|confirmed|cancelled`, `total_amount`
+- `src/entities/OrderItem.ts` — snapshot `product_name`, `product_price`, `subtotal` tại thời điểm đặt
+- `checkout`: tạo order từ cart → clear cart
+- User endpoints: checkout, xem orders của mình, hủy (chỉ khi pending)
+- Admin endpoints: xem tất cả, đổi status bất kỳ
+
+**E2E Tests** — 28 integration tests, chạy với `nestjs001_test` DB:
+- `test/jest-e2e.json`: thêm `moduleNameMapper`, `forceExit`, `testTimeout: 30000`
+- `test/app.e2e-spec.ts`: flow đầy đủ Auth → Category → Product → Cart → Order
+- `beforeAll` cleanup dữ liệu cũ trước khi tạo mới (idempotent)
+- Admin user được tạo bằng cách update `role='admin'` qua `DataSource` trực tiếp
+
+**Unit tests — trạng thái: 96/96 pass, 14 test suites:**
+| File spec | Tests | Ghi chú |
+|---|---|---|
+| `product/product.service.spec.ts` | 8 | +findOne dùng findOne thay findOneBy |
+| `product/product.controller.spec.ts` | 6 | +overrideGuard RolesGuard |
+| `category/category.service.spec.ts` | 8 | CRUD + NotFoundException |
+| `category/category.controller.spec.ts` | 5 | CRUD + overrideGuard |
+| `cart/cart.service.spec.ts` | 12 | getOrCreate, addItem, updateItem, removeItem, clearCart |
+| `cart/cart.controller.spec.ts` | 5 | CRUD |
+| `order/order.service.spec.ts` | 8 | checkout, findAll, findOne, cancel, admin ops |
+| `order/order.controller.spec.ts` | 6 | CRUD + admin |
+| `user/user.controller.spec.ts` | 5 | +overrideGuard RolesGuard, +role trong mockUser |
+| Auth + User service | giữ nguyên | không đổi |
+
+#### Quyết định kỹ thuật quan trọng
+
+10. **RBAC dùng `RolesGuard` riêng biệt, không gộp vào `JwtAuthGuard`** — Tách trách nhiệm: JwtAuthGuard xác thực danh tính, RolesGuard kiểm tra quyền. `RolesGuard` luôn đứng SAU `JwtAuthGuard` vì cần `request.user` do JwtStrategy inject.
+
+11. **OrderItem lưu snapshot giá** — `product_name`, `product_price`, `subtotal` copy từ Product tại thời điểm checkout. Admin sửa giá sau không ảnh hưởng đơn cũ.
+
+12. **`cartRepository.update(id, partial)` thay vì `cartRepository.save(cart)`** — Dùng `save(cart)` với `cart.items = []` và `cascade: true` trên OneToMany khiến TypeORM **NULL hóa `cart_id`** trên tất cả CartItem vừa lưu (cascade nullify behavior). `update(id, {})` chỉ UPDATE bảng `carts` mà không trigger cascade trên relations.
+
+13. **CartService ownership check dùng nested where** — `findOne({ where: { id: itemId, cart: { user: { id: userId } } } })` thay vì load relations rồi so sánh `item.cart.user.id !== userId`. Tránh type mismatch MySQL INT vs JS number, và ít query hơn.
+
+14. **E2E cleanup idempotent** — `cleanupTestData()` chạy ở đầu `beforeAll` (xóa data từ run trước) VÀ ở `afterAll`. Pattern này đảm bảo test không bị ảnh hưởng bởi state cũ dù lần chạy trước bị crash giữa chừng.
+
+15. **E2E dùng real DB + Redis** — Không mock TypeORM hay Redis trong E2E. Dùng `nestjs001_test` database riêng (không ảnh hưởng dev data). `beforeAll` set `process.env.DB_NAME = 'nestjs001_test'` TRƯỚC khi import `AppModule` (vì TypeORM đọc env lúc module init).
+
 #### Bước tiếp theo (session sau)
 
 **Ưu tiên trung bình:**
-- [ ] Tích hợp BullMQ — package đã cài (`@nestjs/bullmq` + `bullmq`), chưa implement queue nào. Cần quyết định queue dùng cho tác vụ gì (ví dụ: gửi email, xử lý ảnh...)
-- [ ] Tích hợp Redis cache — package đã cài (`@nestjs/cache-manager` + `cache-manager-ioredis-yet`), chưa dùng. Cần quyết định cache endpoint nào (ví dụ: `GET /product` danh sách)
+- [ ] BullMQ — use case gợi ý: khi `POST /order/checkout` thành công, push job `order.created` vào queue → worker log "Email xác nhận gửi đến {email}". Package đã cài sẵn.
+- [ ] Pagination cho `GET /product`, `GET /order` — thêm `?page=1&limit=10` query params
 
 **Ưu tiên thấp:**
-- [ ] Swagger/OpenAPI documentation (`@nestjs/swagger`) — chưa cài, chưa dùng
-- [ ] E2E tests trong `test/` — hiện chỉ có NestJS stub mặc định
-- [ ] Guard `POST /product` và các write endpoints — hiện chưa yêu cầu auth, ai cũng có thể tạo/sửa/xóa sản phẩm
+- [ ] Cập nhật `UpdateUserDto` để user có thể tự đổi role (hoặc admin-only endpoint riêng)
+- [ ] Rate limiting cho auth endpoints (chặn brute force)
+- [ ] Xử lý soft delete thay vì hard delete cho User/Product

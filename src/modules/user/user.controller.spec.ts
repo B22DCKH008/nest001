@@ -3,12 +3,15 @@ import { NotFoundException } from '@nestjs/common';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/guards/roles.guard';
 
 const mockUser = {
   id: 1,
   name: 'Test User',
   email: 'test@example.com',
   password: 'hashed_password',
+  role: 'user' as const,
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),
 };
@@ -30,7 +33,12 @@ describe('UserController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [{ provide: UserService, useValue: mockUserService }],
-    }).compile();
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<UserController>(UserController);
     jest.clearAllMocks();

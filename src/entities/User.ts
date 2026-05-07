@@ -14,9 +14,10 @@ export class User {
   @Column()
   password: string;
 
-  @Column({
-    nullable: true,
-  })
+  @Column({ default: 'user' })
+  role: 'user' | 'admin';
+
+  @Column({ nullable: true })
   refresh_token?: string;
 
   @Column()
