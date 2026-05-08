@@ -5,6 +5,7 @@ import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 
 @ApiTags('user')
 @ApiBearerAuth('access-token')
@@ -43,6 +44,17 @@ export class UserController {
   @Patch(':id')
   update(@Body() userData: UpdateUserDto, @Param('id', ParseIntPipe) id: number) {
     return this.userService.update(id, userData);
+  }
+
+  @ApiOperation({ summary: 'Admin: đổi role của user' })
+  @ApiResponse({ status: 200, description: 'User sau khi đổi role' })
+  @ApiResponse({ status: 403, description: 'Không có quyền (yêu cầu admin)' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy user' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Patch(':id/role')
+  updateRole(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateUserRoleDto) {
+    return this.userService.updateRole(id, dto.role);
   }
 
   @ApiOperation({ summary: 'Xóa user (admin)' })

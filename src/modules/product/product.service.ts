@@ -78,7 +78,7 @@ export class ProductService {
         if (!product) {
             throw new NotFoundException(`sản phẩm ko tìm thấy`);
         }
-        await this.productRepository.delete(id);
+        await this.productRepository.softDelete(id);
         await this.cacheManager.clear();
         return product;
     }

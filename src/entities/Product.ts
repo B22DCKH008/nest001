@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, DeleteDateColumn } from 'typeorm';
 import { Category } from './Category';
 
 @Entity('products')
@@ -24,4 +24,7 @@ export class Product {
 
   @Column()
   updated_at: Date;
+
+  @DeleteDateColumn({ nullable: true })
+  deleted_at: Date | null;
 }

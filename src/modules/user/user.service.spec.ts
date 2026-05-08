@@ -25,8 +25,10 @@ const mockRepository = {
   save: jest.fn(),
   find: jest.fn(),
   findOne: jest.fn(),
+  findOneBy: jest.fn(),
   update: jest.fn(),
   delete: jest.fn(),
+  softDelete: jest.fn(),
 };
 
 describe('UserService', () => {
@@ -218,12 +220,13 @@ describe('UserService', () => {
   });
 
   describe('delete', () => {
-    it('xóa user và trả về user đã xóa', async () => {
+    it('soft delete user và trả về user đã xóa', async () => {
       mockRepository.findOne.mockResolvedValue(mockUser);
+      mockRepository.softDelete.mockResolvedValue({ affected: 1 });
 
       const result = await service.delete(1);
 
-      expect(mockRepository.delete).toHaveBeenCalledWith(1);
+      expect(mockRepository.softDelete).toHaveBeenCalledWith(1);
       expect(result).toEqual(mockUser);
     });
 
@@ -231,7 +234,30 @@ describe('UserService', () => {
       mockRepository.findOne.mockResolvedValue(null);
 
       await expect(service.delete(999)).rejects.toThrow(NotFoundException);
-      expect(mockRepository.delete).not.toHaveBeenCalled();
+      expect(mockRepository.softDelete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateRole', () => {
+    it('đổi role user thành công và trả về user đã cập nhật', async () => {
+      const user = { ...mockUser, role: 'user' } as any;
+      mockRepository.findOneBy.mockResolvedValue(user);
+      mockRepository.save.mockImplementation((u: any) => Promise.resolve(u));
+
+      const result = await service.updateRole(1, 'admin');
+
+      expect(mockRepository.findOneBy).toHaveBeenCalledWith({ id: 1 });
+      expect(user.role).toBe('admin');
+      expect(user.updated_at).toBeInstanceOf(Date);
+      expect(mockRepository.save).toHaveBeenCalledWith(user);
+      expect(result.role).toBe('admin');
+    });
+
+    it('throw NotFoundException khi user không tồn tại', async () => {
+      mockRepository.findOneBy.mockResolvedValue(null);
+
+      await expect(service.updateRole(999, 'admin')).rejects.toThrow(NotFoundException);
+      expect(mockRepository.save).not.toHaveBeenCalled();
     });
   });
 });

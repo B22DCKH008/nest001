@@ -1,5 +1,6 @@
 import { Body, Controller, Post, UseGuards, Get, Request, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { UserService } from '../user/user.service';
 import { LocalAuthGuard } from 'src/guards/local-auth.guard';
@@ -17,6 +18,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Đăng ký tài khoản mới' })
   @ApiResponse({ status: 201, description: 'Tạo tài khoản thành công' })
   @ApiResponse({ status: 400, description: 'Dữ liệu không hợp lệ' })
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('register')
   register(@Body() userData: RegisterDto) {
     return this.userService.createUser(userData);
@@ -26,6 +28,7 @@ export class AuthController {
   @ApiBody({ schema: { properties: { email: { type: 'string', example: 'user@example.com' }, password: { type: 'string', example: 'password123' } } } })
   @ApiResponse({ status: 201, description: 'Đăng nhập thành công, trả về tokens' })
   @ApiResponse({ status: 401, description: 'Sai email hoặc mật khẩu' })
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @UseGuards(LocalAuthGuard)
   @Post('login')
   login(@Request() request: any) {
@@ -36,6 +39,7 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   @ApiResponse({ status: 200, description: 'Thông tin user' })
   @ApiResponse({ status: 401, description: 'Token không hợp lệ' })
+  @SkipThrottle()
   @UseGuards(JwtAuthGuard)
   @Get('profile')
   profile(@Request() request: any) {
@@ -46,6 +50,7 @@ export class AuthController {
   @ApiBody({ schema: { properties: { refreshToken: { type: 'string' } } } })
   @ApiResponse({ status: 201, description: 'Trả về tokens mới' })
   @ApiResponse({ status: 400, description: 'Refresh token không hợp lệ' })
+  @SkipThrottle()
   @Post('refresh-token')
   async refreshToken(@Body() { refreshToken }: { refreshToken: string }) {
     if (!refreshToken) {

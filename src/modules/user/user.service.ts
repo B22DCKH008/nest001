@@ -82,7 +82,17 @@ export class UserService {
         if (!user) {
             throw new NotFoundException('Người dùng không tìm thấy');
         }
-        await this.userRepository.delete(id);
+        await this.userRepository.softDelete(id);
         return user;
+    }
+
+    async updateRole(id: number, role: 'user' | 'admin'): Promise<User> {
+        const user = await this.userRepository.findOneBy({ id });
+        if (!user) {
+            throw new NotFoundException('Người dùng không tìm thấy');
+        }
+        user.role = role;
+        user.updated_at = new Date();
+        return this.userRepository.save(user);
     }
 }

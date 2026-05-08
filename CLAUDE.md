@@ -85,8 +85,8 @@ export class EntityName {
 ### Entities hiện có
 | Entity | Bảng | Cột chính |
 |---|---|---|
-| `User` | `users` | id, name, email, password, refresh_token, created_at, updated_at |
-| `Product` | `products` | id, name, price, description, created_at, updated_at |
+| `User` | `users` | id, name, email, password, role, refresh_token, created_at, updated_at, deleted_at |
+| `Product` | `products` | id, name, price, description, created_at, updated_at, deleted_at |
 
 ### Đăng ký entity
 - Khai báo trong `TypeOrmModule.forRoot({ entities: [...] })` tại `app.module.ts`
@@ -104,9 +104,10 @@ export class EntityName {
 | `class-validator` + `class-transformer` | Validate và transform DTO |
 | `nest-winston` + `winston` | Structured logging |
 | `@nestjs/config` | Đọc biến môi trường qua `ConfigService` |
-| `@nestjs/bullmq` + `bullmq` | Task queue (đã cài, chưa dùng) |
-| `@nestjs/cache-manager` + `cache-manager-ioredis-yet` | Redis cache — cache `GET /product` ở service layer, TTL 60s |
+| `@nestjs/bullmq` + `bullmq` | Task queue — push job `order.created` khi checkout, processor log email |
+| `@nestjs/cache-manager` + `cache-manager-ioredis-yet` | Redis cache — cache `GET /product` ở service layer, TTL 60s, per-page key |
 | `@nestjs/swagger` | Swagger UI tại `/api` — docs toàn bộ API |
+| `@nestjs/throttler` | Rate limiting — login 10/phút, register 5/phút; global ThrottlerGuard |
 
 ---
 
@@ -198,12 +199,13 @@ REDIS_PORT=6379
 | GET | `/user` | JwtAuthGuard | Danh sách tất cả users |
 | GET | `/user/:id` | JwtAuthGuard | Chi tiết user theo id |
 | PATCH | `/user/:id` | JwtAuthGuard | Cập nhật user (name, email) |
-| DELETE | `/user/:id` | JwtAuthGuard | Xóa user |
+| PATCH | `/user/:id/role` | JWT + admin | Đổi role user (user/admin) |
+| DELETE | `/user/:id` | JWT + admin | Soft delete user (gán deleted_at) |
 | GET | `/product` | — | Danh sách sản phẩm (cached 60s, kèm category) |
 | GET | `/product/:id` | — | Chi tiết sản phẩm |
 | POST | `/product` | JWT + admin | Tạo sản phẩm |
 | PATCH | `/product/:id` | JWT + admin | Cập nhật sản phẩm |
-| DELETE | `/product/:id` | JWT + admin | Xóa sản phẩm |
+| DELETE | `/product/:id` | JWT + admin | Soft delete sản phẩm (gán deleted_at) |
 | GET | `/category` | — | Danh sách danh mục |
 | GET | `/category/:id` | — | Chi tiết danh mục |
 | POST | `/category` | JWT + admin | Tạo danh mục |
@@ -408,10 +410,45 @@ npm run format        # Prettier format
 #### Bước tiếp theo (session sau)
 
 **Ưu tiên trung bình:**
-- [ ] BullMQ — use case gợi ý: khi `POST /order/checkout` thành công, push job `order.created` vào queue → worker log "Email xác nhận gửi đến {email}". Package đã cài sẵn.
-- [ ] Pagination cho `GET /product`, `GET /order` — thêm `?page=1&limit=10` query params
+- [x] BullMQ — checkout push job `order.created` → `OrderProcessor` log email xác nhận
+- [x] Pagination cho `GET /product`, `GET /order` — response `{ data, total, page, limit, totalPages }`
 
 **Ưu tiên thấp:**
-- [ ] Cập nhật `UpdateUserDto` để user có thể tự đổi role (hoặc admin-only endpoint riêng)
-- [ ] Rate limiting cho auth endpoints (chặn brute force)
-- [ ] Xử lý soft delete thay vì hard delete cho User/Product
+- [x] Admin-only endpoint `PATCH /user/:id/role` — đổi role user/admin
+- [x] Rate limiting cho auth endpoints — `@nestjs/throttler`, login 10/phút, register 5/phút
+- [x] Soft delete thay hard delete — `@DeleteDateColumn` trên User + Product
+
+---
+
+### Session 2026-05-08 — Rate Limiting + Soft Delete + Admin Role Change
+
+#### Những gì đã hoàn thành
+
+**Rate Limiting (`@nestjs/throttler`):**
+- Cài `@nestjs/throttler`, thêm `ThrottlerModule.forRoot` + `APP_GUARD: ThrottlerGuard` global vào `app.module.ts`
+- `AuthController`: `@Throttle({ default: { limit: 10, ttl: 60000 } })` trên `POST /login`, `{ limit: 5 }` trên `POST /register`
+- `@SkipThrottle()` trên `GET /profile` và `POST /refresh-token` (đã có JWT guard, không cần throttle)
+
+**Soft Delete:**
+- `User.ts` và `Product.ts`: thêm `@DeleteDateColumn({ nullable: true }) deleted_at: Date | null`
+- TypeORM `synchronize: true` tự ADD column, không phá data cũ
+- `UserService.delete()` và `ProductService.delete()`: đổi `repository.delete(id)` → `repository.softDelete(id)`
+- TypeORM tự lọc `deleted_at IS NOT NULL` trong mọi `find`/`findOne`
+
+**Admin Role Change:**
+- `src/modules/user/dto/update-user-role.dto.ts` mới — `@IsIn(['user', 'admin'])`
+- `UserService.updateRole(id, role)` mới
+- `UserController`: thêm `PATCH /user/:id/role` (JWT + admin), đặt TRƯỚC `:id` để tránh route conflict
+
+**Unit tests — trạng thái: 102/102 pass, 15 test suites:**
+- `user.service.spec.ts`: +2 tests `updateRole`, đổi `delete` → `softDelete` mock
+- `user.controller.spec.ts`: +1 test `updateRole`
+- `product.service.spec.ts`: đổi `delete` → `softDelete` mock
+
+#### Quyết định kỹ thuật quan trọng
+
+16. **`APP_GUARD: ThrottlerGuard` không ảnh hưởng unit tests** — `APP_GUARD` chỉ apply ở AppModule level. Unit tests dùng `Test.createTestingModule` isolated, không import AppModule → ThrottlerGuard không chạy → không cần override trong spec files.
+
+17. **`softDelete()` không trả entity** — TypeORM `softDelete(id)` trả `UpdateResult`, không phải entity. Phải `findOneBy` TRƯỚC để có entity trả về cho client. Pattern: find → if not found throw → softDelete → return found entity.
+
+18. **`@DeleteDateColumn` tự quản lý filter** — TypeORM tự thêm `WHERE deleted_at IS NULL` vào mọi query sau khi entity có `@DeleteDateColumn`. Không cần sửa gì ở service `findAll`, `findById`, hay relations — đều tự lọc soft-deleted records.

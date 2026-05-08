@@ -23,6 +23,7 @@ const mockRepository = {
   save: jest.fn(),
   update: jest.fn(),
   delete: jest.fn(),
+  softDelete: jest.fn(),
 };
 
 const mockCacheManager = {
@@ -135,14 +136,14 @@ describe('ProductService', () => {
   });
 
   describe('delete', () => {
-    it('xóa product, clear cache, trả về product đã xóa', async () => {
+    it('soft delete product, clear cache, trả về product đã xóa', async () => {
       mockRepository.findOneBy.mockResolvedValue(mockProduct);
-      mockRepository.delete.mockResolvedValue(undefined);
+      mockRepository.softDelete.mockResolvedValue({ affected: 1 });
       mockCacheManager.clear.mockResolvedValue(true);
 
       const result = await service.delete(1);
 
-      expect(mockRepository.delete).toHaveBeenCalledWith(1);
+      expect(mockRepository.softDelete).toHaveBeenCalledWith(1);
       expect(mockCacheManager.clear).toHaveBeenCalledTimes(1);
       expect(result).toEqual(mockProduct);
     });
@@ -150,7 +151,7 @@ describe('ProductService', () => {
     it('throw NotFoundException khi product không tồn tại', async () => {
       mockRepository.findOneBy.mockResolvedValue(null);
       await expect(service.delete(999)).rejects.toThrow(NotFoundException);
-      expect(mockRepository.delete).not.toHaveBeenCalled();
+      expect(mockRepository.softDelete).not.toHaveBeenCalled();
       expect(mockCacheManager.clear).not.toHaveBeenCalled();
     });
   });

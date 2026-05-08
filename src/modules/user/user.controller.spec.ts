@@ -24,6 +24,7 @@ const mockUserService = {
   findById: jest.fn(),
   update: jest.fn(),
   delete: jest.fn(),
+  updateRole: jest.fn(),
 };
 
 describe('UserController', () => {
@@ -97,6 +98,18 @@ describe('UserController', () => {
 
       expect(mockUserService.delete).toHaveBeenCalledWith(1);
       expect(result).toEqual(mockUser);
+    });
+  });
+
+  describe('updateRole', () => {
+    it('gọi userService.updateRole với đúng params và trả về user', async () => {
+      const updated = { ...mockUser, role: 'admin' as const };
+      mockUserService.updateRole.mockResolvedValue(updated);
+
+      const result = await controller.updateRole(1, { role: 'admin' });
+
+      expect(mockUserService.updateRole).toHaveBeenCalledWith(1, 'admin');
+      expect(result).toEqual(updated);
     });
   });
 });

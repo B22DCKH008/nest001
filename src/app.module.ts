@@ -21,6 +21,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-ioredis-yet';
 import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 
 
@@ -36,6 +38,9 @@ import { BullModule } from '@nestjs/bullmq';
         ttl: 60,
       }),
     }),
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60000, limit: 60 },
+    ]),
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (cfg: ConfigService) => ({
@@ -57,6 +62,9 @@ import { BullModule } from '@nestjs/bullmq';
     })
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}
