@@ -11,6 +11,8 @@ async function bootstrap() {
     logger: winstonLogger,
   });
 
+  app.enableCors({ origin: 'http://localhost:5173', credentials: true });
+
   app.use(new LoggingMiddleware().use); // Sử dụng middleware LoggerMiddleware cho tất cả các route
 
   app.useGlobalFilters(new AllHttpExceptionFilter()); // 
