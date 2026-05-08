@@ -20,6 +20,7 @@ const mockProductService = {
   create: jest.fn(),
   update: jest.fn(),
   delete: jest.fn(),
+  restore: jest.fn(),
 };
 
 describe('ProductController', () => {
@@ -41,12 +42,12 @@ describe('ProductController', () => {
   });
 
   describe('getAll', () => {
-    it('trả về danh sách products với pagination', async () => {
+    it('trả về danh sách products với pagination và filter', async () => {
       const paginated = { data: [mockProduct], total: 1, page: 1, limit: 10, totalPages: 1 };
       mockProductService.findAll.mockResolvedValue(paginated);
-      const result = await controller.getAll({ page: 1, limit: 10 });
+      const result = await controller.getAll({ page: 1, limit: 10 }, {});
       expect(result).toEqual(paginated);
-      expect(mockProductService.findAll).toHaveBeenCalledWith(1, 10);
+      expect(mockProductService.findAll).toHaveBeenCalledWith(1, 10, {});
     });
   });
 
@@ -90,6 +91,15 @@ describe('ProductController', () => {
       mockProductService.delete.mockResolvedValue(mockProduct);
       const result = await controller.delete(1);
       expect(mockProductService.delete).toHaveBeenCalledWith(1);
+      expect(result).toEqual(mockProduct);
+    });
+  });
+
+  describe('restore', () => {
+    it('khôi phục product và trả về product đã khôi phục', async () => {
+      mockProductService.restore.mockResolvedValue(mockProduct);
+      const result = await controller.restore(1);
+      expect(mockProductService.restore).toHaveBeenCalledWith(1);
       expect(result).toEqual(mockProduct);
     });
   });

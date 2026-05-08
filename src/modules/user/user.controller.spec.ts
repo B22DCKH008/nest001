@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -16,6 +16,8 @@ const mockUser = {
   updated_at: new Date('2024-01-01'),
 };
 
+const mockRequest = { user: { id: 1, role: 'user' } };
+
 const mockUserService = {
   createUser: jest.fn(),
   findByEmail: jest.fn(),
@@ -25,6 +27,8 @@ const mockUserService = {
   update: jest.fn(),
   delete: jest.fn(),
   updateRole: jest.fn(),
+  changePassword: jest.fn(),
+  restore: jest.fn(),
 };
 
 describe('UserController', () => {
@@ -78,15 +82,21 @@ describe('UserController', () => {
   });
 
   describe('update', () => {
-    it('cập nhật và trả về user sau khi sửa', async () => {
+    it('cập nhật và trả về user sau khi sửa (self update)', async () => {
       const dto: UpdateUserDto = { name: 'Updated Name' };
       const updated = { ...mockUser, name: 'Updated Name' };
       mockUserService.update.mockResolvedValue(updated);
 
-      const result = await controller.update(dto, 1);
+      const result = await controller.update(dto, 1, mockRequest);
 
       expect(mockUserService.update).toHaveBeenCalledWith(1, dto);
       expect(result).toEqual(updated);
+    });
+
+    it('throw ForbiddenException khi update user khác (không phải admin)', () => {
+      const dto: UpdateUserDto = { name: 'Hacked' };
+      expect(() => controller.update(dto, 2, mockRequest)).toThrow(ForbiddenException);
+      expect(mockUserService.update).not.toHaveBeenCalled();
     });
   });
 
@@ -110,6 +120,29 @@ describe('UserController', () => {
 
       expect(mockUserService.updateRole).toHaveBeenCalledWith(1, 'admin');
       expect(result).toEqual(updated);
+    });
+  });
+
+  describe('changePassword', () => {
+    it('gọi userService.changePassword và trả về message thành công', async () => {
+      mockUserService.changePassword.mockResolvedValue(undefined);
+      const dto = { currentPassword: 'old123', newPassword: 'new456' };
+
+      const result = await controller.changePassword(mockRequest, dto);
+
+      expect(mockUserService.changePassword).toHaveBeenCalledWith(1, 'old123', 'new456');
+      expect(result).toEqual({ message: 'Đổi mật khẩu thành công' });
+    });
+  });
+
+  describe('restore', () => {
+    it('gọi userService.restore và trả về user đã khôi phục', async () => {
+      mockUserService.restore.mockResolvedValue(mockUser);
+
+      const result = await controller.restore(1);
+
+      expect(mockUserService.restore).toHaveBeenCalledWith(1);
+      expect(result).toEqual(mockUser);
     });
   });
 });

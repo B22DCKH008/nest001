@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ProductService } from './product.service';
 import { Product } from 'src/entities/Product';
@@ -24,6 +24,7 @@ const mockRepository = {
   update: jest.fn(),
   delete: jest.fn(),
   softDelete: jest.fn(),
+  restore: jest.fn(),
 };
 
 const mockCacheManager = {
@@ -83,6 +84,46 @@ describe('ProductService', () => {
       await service.findAll();
 
       expect(mockCacheManager.get).toHaveBeenCalledWith('products_page_1_limit_10');
+    });
+
+    it('có filter name → dùng Like, không check cache', async () => {
+      mockRepository.findAndCount.mockResolvedValue([[mockProduct], 1]);
+
+      const result = await service.findAll(1, 10, { name: 'phone' });
+
+      expect(mockCacheManager.get).not.toHaveBeenCalled();
+      expect(mockRepository.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ name: expect.anything() }) }),
+      );
+      expect(result.data).toEqual([mockProduct]);
+    });
+  });
+
+  describe('restore', () => {
+    it('khôi phục product đã soft delete thành công', async () => {
+      const deletedProduct = { ...mockProduct, deleted_at: new Date() } as any;
+      const restoredProduct = { ...mockProduct, deleted_at: null } as any;
+      mockRepository.findOne.mockResolvedValue(deletedProduct);
+      mockRepository.restore.mockResolvedValue({ affected: 1 });
+      mockCacheManager.clear.mockResolvedValue(true);
+      mockRepository.findOneBy.mockResolvedValue(restoredProduct);
+
+      const result = await service.restore(1);
+
+      expect(mockRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 }, withDeleted: true });
+      expect(mockRepository.restore).toHaveBeenCalledWith(1);
+      expect(mockCacheManager.clear).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(restoredProduct);
+    });
+
+    it('throw NotFoundException khi product không tồn tại', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+      await expect(service.restore(999)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throw BadRequestException khi product chưa bị xóa', async () => {
+      mockRepository.findOne.mockResolvedValue({ ...mockProduct, deleted_at: null });
+      await expect(service.restore(1)).rejects.toThrow(BadRequestException);
     });
   });
 

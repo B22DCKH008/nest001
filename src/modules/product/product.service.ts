@@ -1,12 +1,13 @@
-import { Injectable, Inject, NotFoundException, Param } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject, NotFoundException, Param } from '@nestjs/common';
 import { Product } from 'src/entities/Product';
 import { Category } from 'src/entities/Category';
-import { Repository } from 'typeorm';
+import { Between, LessThanOrEqual, Like, MoreThanOrEqual, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { ProductFilterDto } from 'src/common/dto/product-filter.dto';
 
 @Injectable()
 export class ProductService {
@@ -28,21 +29,46 @@ export class ProductService {
         return product;
     }
 
-    async findAll(page = 1, limit = 10) {
-        const cacheKey = `products_page_${page}_limit_${limit}`;
-        const cached = await this.cacheManager.get(cacheKey);
-        if (cached) return cached;
+    async findAll(page = 1, limit = 10, filters?: ProductFilterDto) {
+        const hasFilter = filters && Object.values(filters).some(v => v !== undefined);
+
+        if (!hasFilter) {
+            const cacheKey = `products_page_${page}_limit_${limit}`;
+            const cached = await this.cacheManager.get(cacheKey);
+            if (cached) return cached;
+
+            const [products, total] = await this.productRepository.findAndCount({
+                relations: ['category'],
+                skip: (page - 1) * limit,
+                take: limit,
+                order: { id: 'ASC' },
+            });
+
+            const result = { data: products, total, page, limit, totalPages: Math.ceil(total / limit) };
+            await this.cacheManager.set(cacheKey, result);
+            return result;
+        }
+
+        // Filtered query — không cache
+        const where: any = {};
+        if (filters!.name) where.name = Like(`%${filters!.name}%`);
+        if (filters!.categoryId) where.category = { id: filters!.categoryId };
+        if (filters!.minPrice !== undefined && filters!.maxPrice !== undefined) {
+            where.price = Between(filters!.minPrice, filters!.maxPrice);
+        } else if (filters!.minPrice !== undefined) {
+            where.price = MoreThanOrEqual(filters!.minPrice);
+        } else if (filters!.maxPrice !== undefined) {
+            where.price = LessThanOrEqual(filters!.maxPrice);
+        }
 
         const [products, total] = await this.productRepository.findAndCount({
             relations: ['category'],
+            where,
             skip: (page - 1) * limit,
             take: limit,
             order: { id: 'ASC' },
         });
-
-        const result = { data: products, total, page, limit, totalPages: Math.ceil(total / limit) };
-        await this.cacheManager.set(cacheKey, result);
-        return result;
+        return { data: products, total, page, limit, totalPages: Math.ceil(total / limit) };
     }
 
     async create(productData: CreateProductDto) {
@@ -81,5 +107,14 @@ export class ProductService {
         await this.productRepository.softDelete(id);
         await this.cacheManager.clear();
         return product;
+    }
+
+    async restore(id: number) {
+        const product = await this.productRepository.findOne({ where: { id }, withDeleted: true });
+        if (!product) throw new NotFoundException(`sản phẩm ko tìm thấy`);
+        if (!product.deleted_at) throw new BadRequestException('Sản phẩm chưa bị xóa');
+        await this.productRepository.restore(id);
+        await this.cacheManager.clear();
+        return this.productRepository.findOneBy({ id });
     }
 }

@@ -4,7 +4,7 @@ jest.mock('bcrypt', () => ({
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
 import { UserService } from './user.service';
@@ -29,6 +29,7 @@ const mockRepository = {
   update: jest.fn(),
   delete: jest.fn(),
   softDelete: jest.fn(),
+  restore: jest.fn(),
 };
 
 describe('UserService', () => {
@@ -235,6 +236,64 @@ describe('UserService', () => {
 
       await expect(service.delete(999)).rejects.toThrow(NotFoundException);
       expect(mockRepository.softDelete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changePassword', () => {
+    it('đổi mật khẩu thành công khi currentPassword đúng', async () => {
+      const user = { ...mockUser, password: 'hashed_old' } as any;
+      mockRepository.findOneBy.mockResolvedValue(user);
+      (bcrypt.compareSync as jest.Mock).mockReturnValue(true);
+      mockRepository.save.mockResolvedValue(user);
+
+      await service.changePassword(1, 'old123', 'new456');
+
+      expect(mockRepository.findOneBy).toHaveBeenCalledWith({ id: 1 });
+      expect(bcrypt.compareSync).toHaveBeenCalledWith('old123', 'hashed_old');
+      expect(bcrypt.hashSync).toHaveBeenCalledWith('new456', 10);
+      expect(mockRepository.save).toHaveBeenCalled();
+    });
+
+    it('throw BadRequestException khi currentPassword sai', async () => {
+      mockRepository.findOneBy.mockResolvedValue(mockUser);
+      (bcrypt.compareSync as jest.Mock).mockReturnValue(false);
+
+      await expect(service.changePassword(1, 'wrong', 'new456')).rejects.toThrow(BadRequestException);
+      expect(mockRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('throw NotFoundException khi user không tồn tại', async () => {
+      mockRepository.findOneBy.mockResolvedValue(null);
+
+      await expect(service.changePassword(999, 'old', 'new')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('restore', () => {
+    it('khôi phục user đã bị soft delete thành công', async () => {
+      const deletedUser = { ...mockUser, deleted_at: new Date() } as any;
+      const restoredUser = { ...mockUser, deleted_at: null } as any;
+      mockRepository.findOne.mockResolvedValue(deletedUser);
+      mockRepository.restore.mockResolvedValue({ affected: 1 });
+      mockRepository.findOneBy.mockResolvedValue(restoredUser);
+
+      const result = await service.restore(1);
+
+      expect(mockRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 }, withDeleted: true });
+      expect(mockRepository.restore).toHaveBeenCalledWith(1);
+      expect(result).toEqual(restoredUser);
+    });
+
+    it('throw NotFoundException khi user không tồn tại', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.restore(999)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throw BadRequestException khi user chưa bị xóa', async () => {
+      mockRepository.findOne.mockResolvedValue({ ...mockUser, deleted_at: null });
+
+      await expect(service.restore(1)).rejects.toThrow(BadRequestException);
     });
   });
 

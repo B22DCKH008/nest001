@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Scope } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Scope } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 
 import { User } from 'src/entities/User';
@@ -84,6 +84,24 @@ export class UserService {
         }
         await this.userRepository.softDelete(id);
         return user;
+    }
+
+    async changePassword(userId: number, currentPassword: string, newPassword: string): Promise<void> {
+        const user = await this.userRepository.findOneBy({ id: userId });
+        if (!user) throw new NotFoundException('Người dùng không tìm thấy');
+        const isValid = brcypt.compareSync(currentPassword, user.password);
+        if (!isValid) throw new BadRequestException('Mật khẩu hiện tại không đúng');
+        user.password = brcypt.hashSync(newPassword, 10);
+        user.updated_at = new Date();
+        await this.userRepository.save(user);
+    }
+
+    async restore(id: number): Promise<User> {
+        const user = await this.userRepository.findOne({ where: { id }, withDeleted: true });
+        if (!user) throw new NotFoundException('Người dùng không tìm thấy');
+        if (!user.deleted_at) throw new BadRequestException('Người dùng chưa bị xóa');
+        await this.userRepository.restore(id);
+        return this.userRepository.findOneBy({ id }) as Promise<User>;
     }
 
     async updateRole(id: number, role: 'user' | 'admin'): Promise<User> {

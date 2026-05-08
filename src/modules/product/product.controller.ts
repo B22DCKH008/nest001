@@ -4,6 +4,7 @@ import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PaginationDto } from 'src/common/dto/pagination.dto';
+import { ProductFilterDto } from 'src/common/dto/product-filter.dto';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
@@ -15,11 +16,11 @@ export class ProductController {
 
   constructor(private readonly productService: ProductService) {}
 
-  @ApiOperation({ summary: 'Danh sách sản phẩm có phân trang (có kèm category)' })
+  @ApiOperation({ summary: 'Danh sách sản phẩm có phân trang + filter (kèm category)' })
   @ApiResponse({ status: 200, description: 'Trả về PaginatedResult<Product>' })
   @Get('')
-  getAll(@Query() pagination: PaginationDto) {
-    return this.productService.findAll(pagination.page, pagination.limit);
+  getAll(@Query() pagination: PaginationDto, @Query() filter: ProductFilterDto) {
+    return this.productService.findAll(pagination.page, pagination.limit, filter);
   }
 
   @ApiOperation({ summary: 'Chi tiết sản phẩm theo id' })
@@ -57,6 +58,19 @@ export class ProductController {
   @Patch(':id')
   update(@Body() productData: UpdateProductDto, @Param('id', ParseIntPipe) id: number) {
     return this.productService.update(id, productData);
+  }
+
+  @ApiOperation({ summary: 'Admin: khôi phục sản phẩm đã xóa' })
+  @ApiBearerAuth('access-token')
+  @ApiResponse({ status: 200, description: 'Sản phẩm sau khi khôi phục' })
+  @ApiResponse({ status: 400, description: 'Sản phẩm chưa bị xóa' })
+  @ApiResponse({ status: 403, description: 'Không có quyền (yêu cầu admin)' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy sản phẩm' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Patch(':id/restore')
+  restore(@Param('id', ParseIntPipe) id: number) {
+    return this.productService.restore(id);
   }
 
   @ApiOperation({ summary: 'Xóa sản phẩm (admin)' })

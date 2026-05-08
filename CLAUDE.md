@@ -196,15 +196,18 @@ REDIS_PORT=6379
 | POST | `/auth/login` | LocalAuthGuard | Đăng nhập, trả access + refresh token |
 | GET | `/auth/profile` | JwtAuthGuard | Thông tin user hiện tại |
 | POST | `/auth/refresh-token` | — | Cấp lại access token |
-| GET | `/user` | JwtAuthGuard | Danh sách tất cả users |
+| GET | `/user` | JWT + admin | Danh sách tất cả users |
 | GET | `/user/:id` | JwtAuthGuard | Chi tiết user theo id |
-| PATCH | `/user/:id` | JwtAuthGuard | Cập nhật user (name, email) |
+| PATCH | `/user/me/password` | JwtAuthGuard | Tự đổi mật khẩu (validate mật khẩu cũ) |
+| PATCH | `/user/:id` | JwtAuthGuard | Cập nhật user (chỉ self hoặc admin) |
 | PATCH | `/user/:id/role` | JWT + admin | Đổi role user (user/admin) |
+| PATCH | `/user/:id/restore` | JWT + admin | Khôi phục user đã soft delete |
 | DELETE | `/user/:id` | JWT + admin | Soft delete user (gán deleted_at) |
-| GET | `/product` | — | Danh sách sản phẩm (cached 60s, kèm category) |
+| GET | `/product` | — | Danh sách sản phẩm (paginated + filter: name/categoryId/minPrice/maxPrice) |
 | GET | `/product/:id` | — | Chi tiết sản phẩm |
 | POST | `/product` | JWT + admin | Tạo sản phẩm |
 | PATCH | `/product/:id` | JWT + admin | Cập nhật sản phẩm |
+| PATCH | `/product/:id/restore` | JWT + admin | Khôi phục sản phẩm đã soft delete |
 | DELETE | `/product/:id` | JWT + admin | Soft delete sản phẩm (gán deleted_at) |
 | GET | `/category` | — | Danh sách danh mục |
 | GET | `/category/:id` | — | Chi tiết danh mục |
@@ -452,3 +455,42 @@ npm run format        # Prettier format
 17. **`softDelete()` không trả entity** — TypeORM `softDelete(id)` trả `UpdateResult`, không phải entity. Phải `findOneBy` TRƯỚC để có entity trả về cho client. Pattern: find → if not found throw → softDelete → return found entity.
 
 18. **`@DeleteDateColumn` tự quản lý filter** — TypeORM tự thêm `WHERE deleted_at IS NULL` vào mọi query sau khi entity có `@DeleteDateColumn`. Không cần sửa gì ở service `findAll`, `findById`, hay relations — đều tự lọc soft-deleted records.
+
+---
+
+### Session 2026-05-08 (tiếp) — Security Fix + Password Change + Product Filter + Restore
+
+#### Những gì đã hoàn thành
+
+**Security Fix — `PATCH /user/:id`:**
+- Phát hiện: bất kỳ user đã login đều có thể cập nhật profile của user khác
+- Fix: thêm check `req.user.id !== id && req.user.role !== 'admin'` → throw `ForbiddenException`
+- Test: thêm case ForbiddenException (dùng `expect(() => ...).toThrow()` vì throw đồng bộ)
+
+**Password Change — `PATCH /user/me/password`:**
+- `ChangePasswordDto`: `currentPassword` + `newPassword` (min 6 ký tự)
+- `UserService.changePassword()`: validate mật khẩu cũ bằng bcrypt trước khi hash và save mật khẩu mới
+- Route đặt TRƯỚC `:id` để tránh NestJS route conflict
+
+**Product Search/Filter — `GET /product?name=&categoryId=&minPrice=&maxPrice=`:**
+- `src/common/dto/product-filter.dto.ts` mới — 4 optional params với `@Type(() => Number)` cho numeric
+- `ProductService.findAll()`: nếu không có filter → dùng cache như cũ; có filter → query trực tiếp với TypeORM `Like`, `Between`, `MoreThanOrEqual`, `LessThanOrEqual`, không cache
+- Controller dùng 2 `@Query()` decorator tách biệt — NestJS map cùng query string vào cả 2 DTO
+
+**Restore Soft-Deleted — `PATCH /user/:id/restore` + `PATCH /product/:id/restore` (admin):**
+- `UserService.restore()` và `ProductService.restore()`: `findOne({ withDeleted: true })` → validate → `repository.restore(id)` → trả entity đã khôi phục
+- Check `!user.deleted_at` → BadRequestException (chưa bị xóa thì không restore)
+
+**Unit tests — trạng thái: 116/116 pass, 15 test suites:**
+- `user.service.spec.ts`: +3 tests `changePassword`, +3 tests `restore`
+- `user.controller.spec.ts`: +1 test ForbiddenException, +1 test `changePassword`, +1 test `restore`
+- `product.service.spec.ts`: +1 test filter, +3 tests `restore`
+- `product.controller.spec.ts`: fix `getAll` signature, +1 test `restore`
+
+#### Quyết định kỹ thuật quan trọng
+
+19. **ForbiddenException throw đồng bộ trong controller** — `throw new ForbiddenException()` trong method không async sẽ throw ngay, không wrap trong Promise. Test phải dùng `expect(() => controller.update(...)).toThrow()` chứ không phải `.rejects.toThrow()`.
+
+20. **Product filter không cache** — Chỉ cache khi không có filter để tránh explosion của cache keys (mỗi combination filter là 1 key). Filtered requests đi thẳng vào DB, vẫn paginated.
+
+21. **`repository.restore(id)` yêu cầu `withDeleted: true` khi check existence** — TypeORM mặc định filter `deleted_at IS NULL`, nên `findOne(id)` sẽ không tìm thấy record đã soft-delete. Phải dùng `findOne({ where: { id }, withDeleted: true })` để verify record tồn tại trước khi restore.
