@@ -16,6 +16,7 @@ const mockProduct: Product = {
 
 const mockRepository = {
   find: jest.fn(),
+  findAndCount: jest.fn(),
   findOne: jest.fn(),
   findOneBy: jest.fn(),
   create: jest.fn(),
@@ -28,6 +29,7 @@ const mockCacheManager = {
   get: jest.fn(),
   set: jest.fn(),
   del: jest.fn(),
+  clear: jest.fn(),
 };
 
 describe('ProductService', () => {
@@ -47,26 +49,39 @@ describe('ProductService', () => {
   });
 
   describe('findAll', () => {
-    it('cache miss: query DB và set cache', async () => {
+    it('cache miss: query DB với findAndCount và set cache', async () => {
       mockCacheManager.get.mockResolvedValue(null);
-      mockRepository.find.mockResolvedValue([mockProduct]);
+      mockRepository.findAndCount.mockResolvedValue([[mockProduct], 1]);
 
-      const result = await service.findAll();
+      const result = await service.findAll(1, 10);
 
-      expect(mockCacheManager.get).toHaveBeenCalledWith('products_all');
-      expect(mockRepository.find).toHaveBeenCalledTimes(1);
-      expect(mockCacheManager.set).toHaveBeenCalledWith('products_all', [mockProduct]);
-      expect(result).toEqual([mockProduct]);
+      expect(mockCacheManager.get).toHaveBeenCalledWith('products_page_1_limit_10');
+      expect(mockRepository.findAndCount).toHaveBeenCalledTimes(1);
+      expect(mockCacheManager.set).toHaveBeenCalledWith(
+        'products_page_1_limit_10',
+        expect.objectContaining({ data: [mockProduct], total: 1, page: 1, limit: 10, totalPages: 1 }),
+      );
+      expect(result).toEqual(expect.objectContaining({ data: [mockProduct], total: 1 }));
     });
 
     it('cache hit: trả về từ cache, không query DB', async () => {
-      mockCacheManager.get.mockResolvedValue([mockProduct]);
+      const cached = { data: [mockProduct], total: 1, page: 1, limit: 10, totalPages: 1 };
+      mockCacheManager.get.mockResolvedValue(cached);
 
-      const result = await service.findAll();
+      const result = await service.findAll(1, 10);
 
-      expect(mockCacheManager.get).toHaveBeenCalledWith('products_all');
-      expect(mockRepository.find).not.toHaveBeenCalled();
-      expect(result).toEqual([mockProduct]);
+      expect(mockCacheManager.get).toHaveBeenCalledWith('products_page_1_limit_10');
+      expect(mockRepository.findAndCount).not.toHaveBeenCalled();
+      expect(result).toEqual(cached);
+    });
+
+    it('page mặc định là 1, limit mặc định là 10', async () => {
+      mockCacheManager.get.mockResolvedValue(null);
+      mockRepository.findAndCount.mockResolvedValue([[], 0]);
+
+      await service.findAll();
+
+      expect(mockCacheManager.get).toHaveBeenCalledWith('products_page_1_limit_10');
     });
   });
 
@@ -85,11 +100,12 @@ describe('ProductService', () => {
   });
 
   describe('create', () => {
-    it('tạo product với timestamps, xóa cache, trả về product đã lưu', async () => {
+    it('tạo product với timestamps, clear cache, trả về product đã lưu', async () => {
       const dto = { name: 'New Product', price: 200, description: 'Desc' };
       const built = { ...dto } as Product;
       mockRepository.create.mockReturnValue(built);
       mockRepository.save.mockResolvedValue({ ...built, id: 2 });
+      mockCacheManager.clear.mockResolvedValue(true);
 
       const result = await service.create(dto);
 
@@ -97,35 +113,37 @@ describe('ProductService', () => {
       expect(built.created_at).toBeInstanceOf(Date);
       expect(built.updated_at).toBeInstanceOf(Date);
       expect(mockRepository.save).toHaveBeenCalledWith(built);
-      expect(mockCacheManager.del).toHaveBeenCalledWith('products_all');
+      expect(mockCacheManager.clear).toHaveBeenCalledTimes(1);
       expect(result).toBeDefined();
     });
   });
 
   describe('update', () => {
-    it('cập nhật product, xóa cache, trả về product sau khi cập nhật', async () => {
+    it('cập nhật product, clear cache, trả về product sau khi cập nhật', async () => {
       const updated = { ...mockProduct, name: 'Updated' };
       mockRepository.save.mockResolvedValue(undefined);
       mockRepository.findOne.mockResolvedValue(updated);
+      mockCacheManager.clear.mockResolvedValue(true);
 
       const result = await service.update(1, { name: 'Updated' });
 
       expect(mockRepository.save).toHaveBeenCalledWith(expect.objectContaining({ id: 1, name: 'Updated' }));
       expect(mockRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 }, relations: ['category'] });
-      expect(mockCacheManager.del).toHaveBeenCalledWith('products_all');
+      expect(mockCacheManager.clear).toHaveBeenCalledTimes(1);
       expect(result).toEqual(updated);
     });
   });
 
   describe('delete', () => {
-    it('xóa product, xóa cache, trả về product đã xóa', async () => {
+    it('xóa product, clear cache, trả về product đã xóa', async () => {
       mockRepository.findOneBy.mockResolvedValue(mockProduct);
       mockRepository.delete.mockResolvedValue(undefined);
+      mockCacheManager.clear.mockResolvedValue(true);
 
       const result = await service.delete(1);
 
       expect(mockRepository.delete).toHaveBeenCalledWith(1);
-      expect(mockCacheManager.del).toHaveBeenCalledWith('products_all');
+      expect(mockCacheManager.clear).toHaveBeenCalledTimes(1);
       expect(result).toEqual(mockProduct);
     });
 
@@ -133,7 +151,7 @@ describe('ProductService', () => {
       mockRepository.findOneBy.mockResolvedValue(null);
       await expect(service.delete(999)).rejects.toThrow(NotFoundException);
       expect(mockRepository.delete).not.toHaveBeenCalled();
-      expect(mockCacheManager.del).not.toHaveBeenCalled();
+      expect(mockCacheManager.clear).not.toHaveBeenCalled();
     });
   });
 });

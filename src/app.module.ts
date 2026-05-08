@@ -17,9 +17,10 @@ import { CartModule } from './modules/cart/cart.module';
 import { Order } from './entities/Order';
 import { OrderItem } from './entities/OrderItem';
 import { OrderModule } from './modules/order/order.module';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-ioredis-yet';
+import { BullModule } from '@nestjs/bullmq';
 
 
 
@@ -33,6 +34,15 @@ import { redisStore } from 'cache-manager-ioredis-yet';
         host: process.env.REDIS_HOST || 'localhost',
         port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT) : 6379,
         ttl: 60,
+      }),
+    }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => ({
+        connection: {
+          host: cfg.get<string>('REDIS_HOST', 'localhost'),
+          port: cfg.get<number>('REDIS_PORT', 6379),
+        },
       }),
     }),
     TypeOrmModule.forRoot({

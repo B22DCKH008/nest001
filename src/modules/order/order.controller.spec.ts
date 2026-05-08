@@ -53,11 +53,12 @@ describe('OrderController', () => {
   });
 
   describe('findAll', () => {
-    it('trả về danh sách orders của user', async () => {
-      mockOrderService.findAll.mockResolvedValue([mockOrder]);
-      const result = await controller.findAll(mockRequest);
-      expect(mockOrderService.findAll).toHaveBeenCalledWith(1);
-      expect(result).toEqual([mockOrder]);
+    it('trả về danh sách orders phân trang của user', async () => {
+      const paginated = { data: [mockOrder], total: 1, page: 1, limit: 10, totalPages: 1 };
+      mockOrderService.findAll.mockResolvedValue(paginated);
+      const result = await controller.findAll(mockRequest, { page: 1, limit: 10 });
+      expect(mockOrderService.findAll).toHaveBeenCalledWith(1, 1, 10);
+      expect(result).toEqual(paginated);
     });
   });
 

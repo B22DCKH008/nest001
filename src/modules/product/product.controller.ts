@@ -1,8 +1,9 @@
-import { Logger, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Logger, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
@@ -14,11 +15,11 @@ export class ProductController {
 
   constructor(private readonly productService: ProductService) {}
 
-  @ApiOperation({ summary: 'Danh sách tất cả sản phẩm (có kèm category)' })
-  @ApiResponse({ status: 200, description: 'Trả về mảng products' })
+  @ApiOperation({ summary: 'Danh sách sản phẩm có phân trang (có kèm category)' })
+  @ApiResponse({ status: 200, description: 'Trả về PaginatedResult<Product>' })
   @Get('')
-  getAll() {
-    return this.productService.findAll();
+  getAll(@Query() pagination: PaginationDto) {
+    return this.productService.findAll(pagination.page, pagination.limit);
   }
 
   @ApiOperation({ summary: 'Chi tiết sản phẩm theo id' })

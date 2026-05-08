@@ -8,8 +8,6 @@ import type { Cache } from 'cache-manager';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
-const PRODUCTS_CACHE_KEY = 'products_all';
-
 @Injectable()
 export class ProductService {
     constructor(
@@ -30,12 +28,21 @@ export class ProductService {
         return product;
     }
 
-    async findAll(): Promise<Product[]> {
-        const cached = await this.cacheManager.get<Product[]>(PRODUCTS_CACHE_KEY);
+    async findAll(page = 1, limit = 10) {
+        const cacheKey = `products_page_${page}_limit_${limit}`;
+        const cached = await this.cacheManager.get(cacheKey);
         if (cached) return cached;
-        const products = await this.productRepository.find({ relations: ['category'] });
-        await this.cacheManager.set(PRODUCTS_CACHE_KEY, products);
-        return products;
+
+        const [products, total] = await this.productRepository.findAndCount({
+            relations: ['category'],
+            skip: (page - 1) * limit,
+            take: limit,
+            order: { id: 'ASC' },
+        });
+
+        const result = { data: products, total, page, limit, totalPages: Math.ceil(total / limit) };
+        await this.cacheManager.set(cacheKey, result);
+        return result;
     }
 
     async create(productData: CreateProductDto) {
@@ -47,7 +54,7 @@ export class ProductService {
         product.created_at = new Date();
         product.updated_at = new Date();
         const saved = await this.productRepository.save(product);
-        await this.cacheManager.del(PRODUCTS_CACHE_KEY);
+        await this.cacheManager.clear();
         return saved;
     }
 
@@ -62,7 +69,7 @@ export class ProductService {
             where: { id },
             relations: ['category'],
         });
-        await this.cacheManager.del(PRODUCTS_CACHE_KEY);
+        await this.cacheManager.clear();
         return updated;
     }
 
@@ -72,7 +79,7 @@ export class ProductService {
             throw new NotFoundException(`sản phẩm ko tìm thấy`);
         }
         await this.productRepository.delete(id);
-        await this.cacheManager.del(PRODUCTS_CACHE_KEY);
+        await this.cacheManager.clear();
         return product;
     }
 }

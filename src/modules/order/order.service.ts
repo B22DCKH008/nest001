@@ -1,8 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Order, OrderStatus } from 'src/entities/Order';
 import { OrderItem } from 'src/entities/OrderItem';
+import { User } from 'src/entities/User';
 import { CartService } from 'src/modules/cart/cart.service';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 
@@ -13,7 +16,11 @@ export class OrderService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly cartService: CartService,
+    @InjectQueue('order')
+    private readonly orderQueue: Queue,
   ) {}
 
   async checkout(userId: number): Promise<Order> {
@@ -52,15 +59,22 @@ export class OrderService {
 
     await this.cartService.clearCart(userId);
 
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const email = user?.email ?? `user_${userId}@unknown`;
+    await this.orderQueue.add('order.created', { orderId: savedOrder.id, email });
+
     return this.findOne(userId, savedOrder.id);
   }
 
-  findAll(userId: number): Promise<Order[]> {
-    return this.orderRepository.find({
+  async findAll(userId: number, page = 1, limit = 10) {
+    const [orders, total] = await this.orderRepository.findAndCount({
       where: { user: { id: userId } },
       relations: ['items'],
       order: { created_at: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+    return { data: orders, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findOne(userId: number, orderId: number): Promise<Order> {

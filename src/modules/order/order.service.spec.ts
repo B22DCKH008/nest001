@@ -1,9 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { getQueueToken } from '@nestjs/bullmq';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { Order } from 'src/entities/Order';
 import { OrderItem } from 'src/entities/OrderItem';
+import { User } from 'src/entities/User';
 import { CartService } from 'src/modules/cart/cart.service';
 
 const mockCart = {
@@ -24,11 +26,14 @@ const mockOrder = {
   updated_at: new Date(),
 } as unknown as Order;
 
+const mockUser = { id: 1, email: 'test@example.com' } as User;
+
 const mockOrderRepository = {
   create: jest.fn(),
   save: jest.fn(),
   find: jest.fn(),
   findOne: jest.fn(),
+  findAndCount: jest.fn(),
 };
 
 const mockOrderItemRepository = {
@@ -36,9 +41,17 @@ const mockOrderItemRepository = {
   save: jest.fn(),
 };
 
+const mockUserRepository = {
+  findOne: jest.fn(),
+};
+
 const mockCartService = {
   getOrCreateCart: jest.fn(),
   clearCart: jest.fn(),
+};
+
+const mockOrderQueue = {
+  add: jest.fn(),
 };
 
 describe('OrderService', () => {
@@ -50,7 +63,9 @@ describe('OrderService', () => {
         OrderService,
         { provide: getRepositoryToken(Order), useValue: mockOrderRepository },
         { provide: getRepositoryToken(OrderItem), useValue: mockOrderItemRepository },
+        { provide: getRepositoryToken(User), useValue: mockUserRepository },
         { provide: CartService, useValue: mockCartService },
+        { provide: getQueueToken('order'), useValue: mockOrderQueue },
       ],
     }).compile();
 
@@ -64,13 +79,15 @@ describe('OrderService', () => {
       await expect(service.checkout(1)).rejects.toThrow(BadRequestException);
     });
 
-    it('tạo order từ cart, xóa cart sau khi checkout', async () => {
+    it('tạo order từ cart, push job order.created, xóa cart sau khi checkout', async () => {
       mockCartService.getOrCreateCart.mockResolvedValue(mockCart);
       mockOrderRepository.create.mockReturnValue({ ...mockOrder });
       mockOrderRepository.save.mockResolvedValue(mockOrder);
       mockOrderItemRepository.create.mockImplementation((dto) => dto);
       mockOrderItemRepository.save.mockResolvedValue([]);
       mockCartService.clearCart.mockResolvedValue(undefined);
+      mockUserRepository.findOne.mockResolvedValue(mockUser);
+      mockOrderQueue.add.mockResolvedValue({ id: 'job-1' });
       mockOrderRepository.findOne.mockResolvedValue(mockOrder);
 
       const result = await service.checkout(1);
@@ -80,16 +97,24 @@ describe('OrderService', () => {
       );
       expect(mockOrderItemRepository.save).toHaveBeenCalledTimes(1);
       expect(mockCartService.clearCart).toHaveBeenCalledWith(1);
+      expect(mockOrderQueue.add).toHaveBeenCalledWith(
+        'order.created',
+        { orderId: mockOrder.id, email: mockUser.email },
+      );
       expect(result).toEqual(mockOrder);
     });
   });
 
   describe('findAll', () => {
-    it('trả về danh sách orders của user', async () => {
-      mockOrderRepository.find.mockResolvedValue([mockOrder]);
-      const result = await service.findAll(1);
-      expect(result).toEqual([mockOrder]);
-      expect(mockOrderRepository.find).toHaveBeenCalledWith(
+    it('trả về danh sách orders phân trang của user', async () => {
+      mockOrderRepository.findAndCount.mockResolvedValue([[mockOrder], 1]);
+      const result = await service.findAll(1, 1, 10);
+      expect(result.data).toEqual([mockOrder]);
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(10);
+      expect(result.totalPages).toBe(1);
+      expect(mockOrderRepository.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({ where: { user: { id: 1 } } }),
       );
     });

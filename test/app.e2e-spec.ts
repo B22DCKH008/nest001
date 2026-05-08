@@ -181,7 +181,7 @@ describe('E2E Tests', () => {
     it('GET /product → 200, có kèm category', async () => {
       const res = await request(app.getHttpServer()).get('/product');
       expect(res.status).toBe(200);
-      const product = res.body.find((p: any) => p.id === productId);
+      const product = res.body.data.find((p: any) => p.id === productId);
       expect(product).toBeDefined();
       expect(product.category?.id).toBe(categoryId);
     });
@@ -301,7 +301,7 @@ describe('E2E Tests', () => {
         .get('/order')
         .set('Authorization', `Bearer ${userToken}`);
       expect(res.status).toBe(200);
-      expect(res.body.some((o: any) => o.id === orderId)).toBe(true);
+      expect(res.body.data.some((o: any) => o.id === orderId)).toBe(true);
     });
 
     it('GET /order/:id → 200, chi tiết order', async () => {

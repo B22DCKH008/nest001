@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { OrderService } from './order.service';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/guards/roles.guard';
 import { Roles } from 'src/decorators/roles.decorator';
@@ -21,11 +22,11 @@ export class OrderController {
     return this.orderService.checkout(req.user.id);
   }
 
-  @ApiOperation({ summary: 'Danh sách đơn hàng của user hiện tại' })
-  @ApiResponse({ status: 200, description: 'Mảng orders của user' })
+  @ApiOperation({ summary: 'Danh sách đơn hàng của user hiện tại (có phân trang)' })
+  @ApiResponse({ status: 200, description: 'PaginatedResult<Order>' })
   @Get('')
-  findAll(@Request() req: any) {
-    return this.orderService.findAll(req.user.id);
+  findAll(@Request() req: any, @Query() pagination: PaginationDto) {
+    return this.orderService.findAll(req.user.id, pagination.page, pagination.limit);
   }
 
   @ApiOperation({ summary: 'Chi tiết một đơn hàng (chỉ xem được của mình)' })

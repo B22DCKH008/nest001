@@ -41,11 +41,12 @@ describe('ProductController', () => {
   });
 
   describe('getAll', () => {
-    it('trả về danh sách products', async () => {
-      mockProductService.findAll.mockResolvedValue([mockProduct]);
-      const result = await controller.getAll();
-      expect(result).toEqual([mockProduct]);
-      expect(mockProductService.findAll).toHaveBeenCalledTimes(1);
+    it('trả về danh sách products với pagination', async () => {
+      const paginated = { data: [mockProduct], total: 1, page: 1, limit: 10, totalPages: 1 };
+      mockProductService.findAll.mockResolvedValue(paginated);
+      const result = await controller.getAll({ page: 1, limit: 10 });
+      expect(result).toEqual(paginated);
+      expect(mockProductService.findAll).toHaveBeenCalledWith(1, 10);
     });
   });
 
