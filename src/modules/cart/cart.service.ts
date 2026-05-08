@@ -30,10 +30,10 @@ export class CartService {
         updated_at: new Date(),
       });
       await this.cartRepository.save(newCart);
-      cart = await this.cartRepository.findOne({
+      cart = (await this.cartRepository.findOne({
         where: { id: newCart.id },
         relations: ['items', 'items.product', 'items.product.category'],
-      });
+      })) as Cart;
     }
     return cart;
   }
