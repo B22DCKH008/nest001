@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AllHttpExceptionFilter } from 'src/exceptions/http-exception.filter';
+import { getQueueToken } from '@nestjs/bullmq';
 
 // Set test DB before AppModule resolves env vars
 process.env.DB_NAME = 'nestjs001_test';
@@ -35,7 +36,10 @@ describe('E2E Tests', () => {
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(getQueueToken('order'))
+      .useValue({ add: jest.fn() })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
@@ -339,7 +343,7 @@ describe('E2E Tests', () => {
         .get('/order/admin/all')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body)).toBe(true);
+      expect(Array.isArray(res.body.data)).toBe(true);
     });
   });
 });

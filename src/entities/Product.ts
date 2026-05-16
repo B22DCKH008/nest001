@@ -19,6 +19,9 @@ export class Product {
   @JoinColumn({ name: 'category_id' })
   category?: Category;
 
+  @Column({ nullable: true })
+  image_url: string | null;
+
   @Column()
   created_at: Date;
 

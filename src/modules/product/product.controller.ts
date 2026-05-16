@@ -1,5 +1,8 @@
-import { Logger, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Logger, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -46,6 +49,40 @@ export class ProductController {
   @Post('')
   create(@Body() productData: CreateProductDto) {
     return this.productService.create(productData);
+  }
+
+  @ApiOperation({ summary: 'Upload ảnh sản phẩm (admin)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', properties: { image: { type: 'string', format: 'binary' } } } })
+  @ApiBearerAuth('access-token')
+  @ApiResponse({ status: 201, description: 'Sản phẩm sau khi cập nhật ảnh' })
+  @ApiResponse({ status: 400, description: 'File không hợp lệ' })
+  @ApiResponse({ status: 404, description: 'Không tìm thấy sản phẩm' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
+  @Post(':id/image')
+  @UseInterceptors(FileInterceptor('image', {
+    storage: diskStorage({
+      destination: join(process.cwd(), 'uploads'),
+      filename: (req, file, cb) => {
+        const ext = extname(file.originalname);
+        cb(null, `product-${req.params.id}-${Date.now()}${ext}`);
+      },
+    }),
+    fileFilter: (req, file, cb) => {
+      if (!file.mimetype.startsWith('image/')) {
+        return cb(new BadRequestException('Chỉ chấp nhận file ảnh (jpg, png, webp...)') as any, false);
+      }
+      cb(null, true);
+    },
+    limits: { fileSize: 5 * 1024 * 1024 },
+  }))
+  uploadImage(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('Không có file được upload');
+    return this.productService.updateImage(id, file.filename);
   }
 
   @ApiOperation({ summary: 'Cập nhật sản phẩm (admin)' })

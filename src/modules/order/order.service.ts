@@ -98,11 +98,14 @@ export class OrderService {
     return this.orderRepository.save(order);
   }
 
-  findAllAdmin(): Promise<Order[]> {
-    return this.orderRepository.find({
+  async findAllAdmin(page = 1, limit = 10) {
+    const [orders, total] = await this.orderRepository.findAndCount({
       relations: ['items', 'user'],
       order: { created_at: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+    return { data: orders, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async updateStatus(orderId: number, dto: UpdateOrderStatusDto): Promise<Order> {

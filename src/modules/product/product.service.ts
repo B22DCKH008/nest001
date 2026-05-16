@@ -117,4 +117,13 @@ export class ProductService {
         await this.cacheManager.clear();
         return this.productRepository.findOneBy({ id });
     }
+
+    async updateImage(id: number, filename: string): Promise<Product> {
+        const product = await this.find(id);
+        product.image_url = `/uploads/${filename}`;
+        product.updated_at = new Date();
+        const saved = await this.productRepository.save(product);
+        await this.cacheManager.clear();
+        return saved;
+    }
 }

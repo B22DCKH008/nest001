@@ -51,8 +51,8 @@ export class OrderController {
   @UseGuards(RolesGuard)
   @Roles('admin')
   @Get('admin/all')
-  findAllAdmin() {
-    return this.orderService.findAllAdmin();
+  findAllAdmin(@Query() pagination: PaginationDto) {
+    return this.orderService.findAllAdmin(pagination.page, pagination.limit);
   }
 
   @ApiOperation({ summary: 'Admin: cập nhật trạng thái đơn hàng' })

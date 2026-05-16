@@ -5,6 +5,7 @@ import { Order } from 'src/entities/Order';
 import { OrderItem } from 'src/entities/OrderItem';
 import { User } from 'src/entities/User';
 import { CartModule } from 'src/modules/cart/cart.module';
+import { MailModule } from 'src/modules/mail/mail.module';
 import { OrderService } from './order.service';
 import { OrderController } from './order.controller';
 import { OrderProcessor } from './order.processor';
@@ -13,6 +14,7 @@ import { OrderProcessor } from './order.processor';
   imports: [
     TypeOrmModule.forFeature([Order, OrderItem, User]),
     CartModule,
+    MailModule,
     BullModule.registerQueue({ name: 'order' }),
   ],
   controllers: [OrderController],

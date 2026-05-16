@@ -82,11 +82,12 @@ describe('OrderController', () => {
   });
 
   describe('findAllAdmin', () => {
-    it('trả về tất cả orders', async () => {
-      mockOrderService.findAllAdmin.mockResolvedValue([mockOrder]);
-      const result = await controller.findAllAdmin();
-      expect(mockOrderService.findAllAdmin).toHaveBeenCalledTimes(1);
-      expect(result).toEqual([mockOrder]);
+    it('trả về tất cả orders phân trang', async () => {
+      const paginated = { data: [mockOrder], total: 1, page: 1, limit: 10, totalPages: 1 };
+      mockOrderService.findAllAdmin.mockResolvedValue(paginated);
+      const result = await controller.findAllAdmin({ page: 1, limit: 10 });
+      expect(mockOrderService.findAllAdmin).toHaveBeenCalledWith(1, 10);
+      expect(result).toEqual(paginated);
     });
   });
 

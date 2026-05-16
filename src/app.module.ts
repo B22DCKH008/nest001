@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './modules/user/user.module';
 import { AuthController } from './modules/auth/auth.controller';
 import { AuthModule } from './modules/auth/auth.module';
+import { HealthModule } from './modules/health/health.module';
 
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Product } from './entities/Product';
@@ -27,14 +29,40 @@ import { APP_GUARD } from '@nestjs/core';
 
 
 @Module({
-  imports: [UserModule, AuthModule, ProductModule, CategoryModule, CartModule, OrderModule,
-    ConfigModule.forRoot({ isGlobal: true }),
+  imports: [UserModule, AuthModule, ProductModule, CategoryModule, CartModule, OrderModule, HealthModule,
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validationSchema: Joi.object({
+        NODE_ENV: Joi.string().valid('development', 'production', 'test').default('development'),
+        PORT: Joi.number().default(3000),
+        CORS_ORIGIN: Joi.string().default('http://localhost:5173'),
+        JWT_SECRET: Joi.string().required(),
+        JWT_ACCESS_TOKEN_EXPIRE: Joi.string().default('1h'),
+        JWT_REFRESH_TOKEN_EXPIRE: Joi.string().default('7d'),
+        DB_DRIVER: Joi.string().default('mysql'),
+        DB_HOST: Joi.string().default('localhost'),
+        DB_PORT: Joi.number().default(3306),
+        DB_NAME: Joi.string().default('nestjs001'),
+        DB_USERNAME: Joi.string().default('root'),
+        DB_PASSWORD: Joi.string().allow('').default(''),
+        REDIS_HOST: Joi.string().default('localhost'),
+        REDIS_PORT: Joi.number().default(6379),
+        REDIS_PASSWORD: Joi.string().allow('').default(''),
+        MAIL_HOST: Joi.string().default('smtp.gmail.com'),
+        MAIL_PORT: Joi.number().default(587),
+        MAIL_USER: Joi.string().allow('').default(''),
+        MAIL_PASS: Joi.string().allow('').default(''),
+        MAIL_FROM: Joi.string().default('noreply@shopapp.com'),
+      }),
+    }),
     CacheModule.registerAsync({
       isGlobal: true,
-      useFactory: async () => ({
+      inject: [ConfigService],
+      useFactory: async (cfg: ConfigService) => ({
         store: redisStore,
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT ? parseInt(process.env.REDIS_PORT) : 6379,
+        host: cfg.get<string>('REDIS_HOST', 'localhost'),
+        port: cfg.get<number>('REDIS_PORT', 6379),
+        password: cfg.get<string>('REDIS_PASSWORD', '') || undefined,
         ttl: 60,
       }),
     }),
@@ -47,18 +75,22 @@ import { APP_GUARD } from '@nestjs/core';
         connection: {
           host: cfg.get<string>('REDIS_HOST', 'localhost'),
           port: cfg.get<number>('REDIS_PORT', 6379),
+          password: cfg.get<string>('REDIS_PASSWORD', '') || undefined,
         },
       }),
     }),
-    TypeOrmModule.forRoot({
-      type: process.env.DB_DRIVER as any,
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
-      username: process.env.DB_USERNAME,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-      entities: [Product, User, Category, Cart, CartItem, Order, OrderItem],
-      synchronize: true,
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => ({
+        type: (cfg.get<string>('DB_DRIVER', 'mysql')) as any,
+        host: cfg.get<string>('DB_HOST', 'localhost'),
+        port: cfg.get<number>('DB_PORT', 3306),
+        username: cfg.get<string>('DB_USERNAME', 'root'),
+        password: cfg.get<string>('DB_PASSWORD', ''),
+        database: cfg.get<string>('DB_NAME', 'nestjs001'),
+        entities: [Product, User, Category, Cart, CartItem, Order, OrderItem],
+        synchronize: cfg.get<string>('NODE_ENV') !== 'production',
+      }),
     })
   ],
   controllers: [AppController],

@@ -154,11 +154,15 @@ describe('OrderService', () => {
   });
 
   describe('findAllAdmin', () => {
-    it('trả về tất cả orders', async () => {
-      mockOrderRepository.find.mockResolvedValue([mockOrder]);
-      const result = await service.findAllAdmin();
-      expect(result).toEqual([mockOrder]);
-      expect(mockOrderRepository.find).toHaveBeenCalledWith(
+    it('trả về tất cả orders phân trang', async () => {
+      mockOrderRepository.findAndCount.mockResolvedValue([[mockOrder], 1]);
+      const result = await service.findAllAdmin(1, 10);
+      expect(result.data).toEqual([mockOrder]);
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(10);
+      expect(result.totalPages).toBe(1);
+      expect(mockOrderRepository.findAndCount).toHaveBeenCalledWith(
         expect.objectContaining({ relations: ['items', 'user'] }),
       );
     });
