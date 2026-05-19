@@ -1,5 +1,7 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, DeleteDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, DeleteDateColumn, OneToMany } from 'typeorm';
 import { Category } from './Category';
+import { OrderItem } from './OrderItem';
+import { CartItem } from './CartItem';
 
 @Entity('products')
 export class Product {
@@ -19,7 +21,13 @@ export class Product {
   @JoinColumn({ name: 'category_id' })
   category?: Category;
 
-  @Column({ nullable: true })
+  @OneToMany(() => CartItem, (cartItem) => cartItem.product, { cascade: true })
+  cartItems: CartItem[];
+
+  @OneToMany(() => OrderItem, (orderItem) => orderItem.product, { cascade: true })
+  orderItems: OrderItem[];
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
   image_url: string | null;
 
   @Column()

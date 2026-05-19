@@ -40,21 +40,23 @@ export class UserService {
 
     async saveRefreshToken(refreshToken: string, userId: number){
         const user = await this.userRepository.findOne({ where: { id: userId } });
-        const hashedRefreshToken = await brcypt.hashSync(refreshToken, 10);
-        if (!user) {
+        if(!user){
             return false;
         }
+        const hashedRefreshToken = await brcypt.hashSync(refreshToken, 10);
         user.refresh_token = hashedRefreshToken;
+        user.updated_at = new Date();
         return this.userRepository.save(user);
     }
 
     async verifyRefreshToken(refreshToken: string, userId: number) {
         const user = await this.userRepository.findOne({ where: { id: userId } });
-        if(user){
-            const status = await brcypt.compareSync(refreshToken, user.refresh_token);
-            if(status){
-                return user;
-            }
+        if(!user){
+            return false;
+        }
+        const status = await brcypt.compareSync(refreshToken, user.refresh_token);
+        if(status){
+            return user;
         }
         return false;
     }

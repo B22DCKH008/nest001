@@ -47,12 +47,13 @@ export class OrderService {
     const orderItems = cart.items.map((cartItem) =>
       this.orderItemRepository.create({
         order: { id: savedOrder.id },
-        product_id: cartItem.product.id,
+        product: { id: cartItem.product.id },
         product_name: cartItem.product.name,
         product_price: cartItem.product.price,
         quantity: cartItem.quantity,
         subtotal: cartItem.product.price * cartItem.quantity,
         created_at: new Date(),
+        updated_at: new Date(),
       }),
     );
     await this.orderItemRepository.save(orderItems);

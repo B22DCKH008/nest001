@@ -45,9 +45,12 @@ import { APP_GUARD } from '@nestjs/core';
         DB_NAME: Joi.string().default('nestjs001'),
         DB_USERNAME: Joi.string().default('root'),
         DB_PASSWORD: Joi.string().allow('').default(''),
+        DB_SSL: Joi.string().valid('true', 'false').default('false'),
+        DB_SSL_REJECT_UNAUTHORIZED: Joi.string().valid('true', 'false').default('false'),
         REDIS_HOST: Joi.string().default('localhost'),
         REDIS_PORT: Joi.number().default(6379),
         REDIS_PASSWORD: Joi.string().allow('').default(''),
+        REDIS_TLS: Joi.string().valid('true', 'false').default('false'),
         MAIL_HOST: Joi.string().default('smtp.gmail.com'),
         MAIL_PORT: Joi.number().default(587),
         MAIL_USER: Joi.string().allow('').default(''),
@@ -63,6 +66,7 @@ import { APP_GUARD } from '@nestjs/core';
         host: cfg.get<string>('REDIS_HOST', 'localhost'),
         port: cfg.get<number>('REDIS_PORT', 6379),
         password: cfg.get<string>('REDIS_PASSWORD', '') || undefined,
+        tls: cfg.get<string>('REDIS_TLS') === 'true' ? {} : undefined,
         ttl: 60,
       }),
     }),
@@ -76,6 +80,7 @@ import { APP_GUARD } from '@nestjs/core';
           host: cfg.get<string>('REDIS_HOST', 'localhost'),
           port: cfg.get<number>('REDIS_PORT', 6379),
           password: cfg.get<string>('REDIS_PASSWORD', '') || undefined,
+          tls: cfg.get<string>('REDIS_TLS') === 'true' ? {} : undefined,
         },
       }),
     }),
@@ -90,6 +95,9 @@ import { APP_GUARD } from '@nestjs/core';
         database: cfg.get<string>('DB_NAME', 'nestjs001'),
         entities: [Product, User, Category, Cart, CartItem, Order, OrderItem],
         synchronize: cfg.get<string>('NODE_ENV') !== 'production',
+        ssl: cfg.get<string>('DB_SSL') === 'true'
+          ? { rejectUnauthorized: cfg.get<string>('DB_SSL_REJECT_UNAUTHORIZED') === 'true' }
+          : undefined,
       }),
     })
   ],
