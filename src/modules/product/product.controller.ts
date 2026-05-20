@@ -1,8 +1,7 @@
 import { Logger, Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { memoryStorage } from 'multer';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -62,13 +61,7 @@ export class ProductController {
   @Roles('admin')
   @Post(':id/image')
   @UseInterceptors(FileInterceptor('image', {
-    storage: diskStorage({
-      destination: join(process.cwd(), 'uploads'),
-      filename: (req, file, cb) => {
-        const ext = extname(file.originalname);
-        cb(null, `product-${req.params.id}-${Date.now()}${ext}`);
-      },
-    }),
+    storage: memoryStorage(),
     fileFilter: (req, file, cb) => {
       if (!file.mimetype.startsWith('image/')) {
         return cb(new BadRequestException('Chỉ chấp nhận file ảnh (jpg, png, webp...)') as any, false);
@@ -82,7 +75,7 @@ export class ProductController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('Không có file được upload');
-    return this.productService.updateImage(id, file.filename);
+    return this.productService.updateImage(id, file);
   }
 
   @ApiOperation({ summary: 'Cập nhật sản phẩm (admin)' })

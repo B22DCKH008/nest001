@@ -11,9 +11,10 @@ export class CreateProductDto {
   @IsNumber({}, { message: 'Giá phải là một số' })
   price!: number;
 
-  @ApiProperty({ example: 'Tai nghe chống ồn cao cấp', description: 'Mô tả sản phẩm' })
+  @ApiPropertyOptional({ example: 'Tai nghe chống ồn cao cấp', description: 'Mô tả sản phẩm' })
+  @IsOptional()
   @IsString({ message: 'Mô tả phải là một chuỗi' })
-  description!: string;
+  description?: string;
 
   @ApiPropertyOptional({ example: 1, description: 'ID danh mục (tùy chọn)' })
   @IsOptional()

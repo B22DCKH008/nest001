@@ -5,6 +5,7 @@ import { Between, LessThanOrEqual, Like, MoreThanOrEqual, Repository } from 'typ
 import { InjectRepository } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
+import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductFilterDto } from 'src/common/dto/product-filter.dto';
@@ -72,8 +73,8 @@ export class ProductService {
     }
 
     async create(productData: CreateProductDto) {
-        const { category_id, ...rest } = productData;
-        const product = this.productRepository.create(rest);
+        const { category_id, description = '', ...rest } = productData;
+        const product = this.productRepository.create({ ...rest, description });
         if (category_id) {
             product.category = { id: category_id } as Category;
         }
@@ -118,9 +119,41 @@ export class ProductService {
         return this.productRepository.findOneBy({ id });
     }
 
-    async updateImage(id: number, filename: string): Promise<Product> {
+    private uploadImageToCloudinary(file: Express.Multer.File, productId: number): Promise<UploadApiResponse> {
+        if (!file.buffer) {
+            throw new BadRequestException('File upload khong hop le');
+        }
+
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key: process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+        });
+
+        return new Promise((resolve, reject) => {
+            const upload = cloudinary.uploader.upload_stream(
+                {
+                    folder: 'shopapp/products',
+                    public_id: `product-${productId}-${Date.now()}`,
+                    resource_type: 'image',
+                    overwrite: true,
+                },
+                (error, result) => {
+                    if (error || !result) {
+                        return reject(error || new Error('Cloudinary upload did not return a result'));
+                    }
+                    resolve(result);
+                },
+            );
+
+            upload.end(file.buffer);
+        });
+    }
+
+    async updateImage(id: number, file: Express.Multer.File): Promise<Product> {
         const product = await this.find(id);
-        product.image_url = `/uploads/${filename}`;
+        const uploadResult = await this.uploadImageToCloudinary(file, id);
+        product.image_url = uploadResult.secure_url;
         product.updated_at = new Date();
         const saved = await this.productRepository.save(product);
         await this.cacheManager.clear();
