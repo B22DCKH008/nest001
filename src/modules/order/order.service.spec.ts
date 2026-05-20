@@ -99,7 +99,15 @@ describe('OrderService', () => {
       expect(mockCartService.clearCart).toHaveBeenCalledWith(1);
       expect(mockOrderQueue.add).toHaveBeenCalledWith(
         'order.created',
-        { orderId: mockOrder.id, email: mockUser.email },
+        expect.objectContaining({
+          orderId: mockOrder.id,
+          email: mockUser.email,
+          total_amount: 250,
+          items: [
+            { product_name: 'Product A', product_price: 100, quantity: 2, subtotal: 200 },
+            { product_name: 'Product B', product_price: 50, quantity: 1, subtotal: 50 },
+          ],
+        }),
       );
       expect(result).toEqual(mockOrder);
     });

@@ -62,7 +62,17 @@ export class OrderService {
 
     const user = await this.userRepository.findOne({ where: { id: userId } });
     const email = user?.email ?? `user_${userId}@unknown`;
-    await this.orderQueue.add('order.created', { orderId: savedOrder.id, email });
+    await this.orderQueue.add('order.created', {
+      orderId: savedOrder.id,
+      email,
+      total_amount,
+      items: orderItems.map((item) => ({
+        product_name: item.product_name,
+        product_price: Number(item.product_price),
+        quantity: item.quantity,
+        subtotal: Number(item.subtotal),
+      })),
+    });
 
     return this.findOne(userId, savedOrder.id);
   }

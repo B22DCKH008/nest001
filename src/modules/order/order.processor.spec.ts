@@ -27,14 +27,23 @@ describe('OrderProcessor', () => {
     mockMailService.sendOrderConfirmation.mockResolvedValue(undefined);
     const job = {
       id: 'j1',
-      data: { orderId: 42, email: 'user@example.com' } as OrderCreatedPayload,
+      data: {
+        orderId: 42,
+        email: 'user@example.com',
+        total_amount: 100,
+        items: [{ product_name: 'Product A', product_price: 100, quantity: 1, subtotal: 100 }],
+      } as OrderCreatedPayload,
     } as Job<OrderCreatedPayload>;
 
     await processor.process(job);
 
     expect(mockMailService.sendOrderConfirmation).toHaveBeenCalledWith(
       'user@example.com',
-      42,
+      {
+        orderId: 42,
+        total_amount: 100,
+        items: [{ product_name: 'Product A', product_price: 100, quantity: 1, subtotal: 100 }],
+      },
     );
   });
 });
