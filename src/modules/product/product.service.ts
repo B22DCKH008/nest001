@@ -1,11 +1,11 @@
 import { BadRequestException, Injectable, Inject, NotFoundException, Param } from '@nestjs/common';
-import { Product } from 'src/entities/Product';
-import { Category } from 'src/entities/Category';
-import { Between, LessThanOrEqual, Like, MoreThanOrEqual, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary';
+import { Repository } from 'typeorm';
+import { Category } from 'src/entities/Category';
+import { Product } from 'src/entities/Product';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductFilterDto } from 'src/common/dto/product-filter.dto';
@@ -25,13 +25,13 @@ export class ProductService {
             relations: ['category'],
         });
         if (!product) {
-            throw new NotFoundException(`sản phẩm ko tìm thấy`);
+            throw new NotFoundException('san pham khong tim thay');
         }
         return product;
     }
 
     async findAll(page = 1, limit = 10, filters?: ProductFilterDto) {
-        const hasFilter = filters && Object.values(filters).some(v => v !== undefined);
+        const hasFilter = filters && Object.values(filters).some(v => v !== undefined && v !== '');
 
         if (!hasFilter) {
             const cacheKey = `products_page_${page}_limit_${limit}`;
@@ -50,25 +50,27 @@ export class ProductService {
             return result;
         }
 
-        // Filtered query — không cache
-        const where: any = {};
-        if (filters!.name) where.name = Like(`%${filters!.name}%`);
-        if (filters!.categoryId) where.category = { id: filters!.categoryId };
-        if (filters!.minPrice !== undefined && filters!.maxPrice !== undefined) {
-            where.price = Between(filters!.minPrice, filters!.maxPrice);
-        } else if (filters!.minPrice !== undefined) {
-            where.price = MoreThanOrEqual(filters!.minPrice);
-        } else if (filters!.maxPrice !== undefined) {
-            where.price = LessThanOrEqual(filters!.maxPrice);
+        const query = this.productRepository
+            .createQueryBuilder('product')
+            .leftJoinAndSelect('product.category', 'category')
+            .orderBy('product.id', 'ASC')
+            .skip((page - 1) * limit)
+            .take(limit);
+
+        if (filters!.name?.trim()) {
+            query.andWhere('product.name LIKE :name', { name: `%${filters!.name.trim()}%` });
+        }
+        if (filters!.categoryId !== undefined) {
+            query.andWhere('category.id = :categoryId', { categoryId: filters!.categoryId });
+        }
+        if (filters!.minPrice !== undefined) {
+            query.andWhere('product.price >= :minPrice', { minPrice: filters!.minPrice });
+        }
+        if (filters!.maxPrice !== undefined) {
+            query.andWhere('product.price <= :maxPrice', { maxPrice: filters!.maxPrice });
         }
 
-        const [products, total] = await this.productRepository.findAndCount({
-            relations: ['category'],
-            where,
-            skip: (page - 1) * limit,
-            take: limit,
-            order: { id: 'ASC' },
-        });
+        const [products, total] = await query.getManyAndCount();
         return { data: products, total, page, limit, totalPages: Math.ceil(total / limit) };
     }
 
@@ -103,7 +105,7 @@ export class ProductService {
     async delete(id: number) {
         const product = await this.productRepository.findOneBy({ id });
         if (!product) {
-            throw new NotFoundException(`sản phẩm ko tìm thấy`);
+            throw new NotFoundException('san pham khong tim thay');
         }
         await this.productRepository.softDelete(id);
         await this.cacheManager.clear();
@@ -112,8 +114,8 @@ export class ProductService {
 
     async restore(id: number) {
         const product = await this.productRepository.findOne({ where: { id }, withDeleted: true });
-        if (!product) throw new NotFoundException(`sản phẩm ko tìm thấy`);
-        if (!product.deleted_at) throw new BadRequestException('Sản phẩm chưa bị xóa');
+        if (!product) throw new NotFoundException('san pham khong tim thay');
+        if (!product.deleted_at) throw new BadRequestException('San pham chua bi xoa');
         await this.productRepository.restore(id);
         await this.cacheManager.clear();
         return this.productRepository.findOneBy({ id });

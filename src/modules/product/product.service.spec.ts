@@ -17,6 +17,7 @@ const mockProduct: Product = {
 const mockRepository = {
   find: jest.fn(),
   findAndCount: jest.fn(),
+  createQueryBuilder: jest.fn(),
   findOne: jest.fn(),
   findOneBy: jest.fn(),
   create: jest.fn(),
@@ -32,6 +33,18 @@ const mockCacheManager = {
   set: jest.fn(),
   del: jest.fn(),
   clear: jest.fn(),
+};
+
+const createMockQueryBuilder = () => {
+  const queryBuilder = {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    skip: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    getManyAndCount: jest.fn().mockResolvedValue([[mockProduct], 1]),
+  };
+  return queryBuilder;
 };
 
 describe('ProductService', () => {
@@ -86,16 +99,30 @@ describe('ProductService', () => {
       expect(mockCacheManager.get).toHaveBeenCalledWith('products_page_1_limit_10');
     });
 
-    it('có filter name → dùng Like, không check cache', async () => {
-      mockRepository.findAndCount.mockResolvedValue([[mockProduct], 1]);
+    it('co filter name thi dung query builder, khong check cache', async () => {
+      const queryBuilder = createMockQueryBuilder();
+      mockRepository.createQueryBuilder.mockReturnValue(queryBuilder);
 
       const result = await service.findAll(1, 10, { name: 'phone' });
 
       expect(mockCacheManager.get).not.toHaveBeenCalled();
-      expect(mockRepository.findAndCount).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ name: expect.anything() }) }),
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'product.name LIKE :name',
+        { name: '%phone%' },
       );
       expect(result.data).toEqual([mockProduct]);
+    });
+
+    it('co filter categoryId thi filter theo category.id', async () => {
+      const queryBuilder = createMockQueryBuilder();
+      mockRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+
+      await service.findAll(1, 10, { categoryId: 2 });
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        'category.id = :categoryId',
+        { categoryId: 2 },
+      );
     });
   });
 
