@@ -6,7 +6,6 @@ import { extname, join } from 'path';
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { PaginationDto } from 'src/common/dto/pagination.dto';
 import { ProductFilterDto } from 'src/common/dto/product-filter.dto';
 import { JwtAuthGuard } from 'src/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/guards/roles.guard';
@@ -22,8 +21,9 @@ export class ProductController {
   @ApiOperation({ summary: 'Danh sách sản phẩm có phân trang + filter (kèm category)' })
   @ApiResponse({ status: 200, description: 'Trả về PaginatedResult<Product>' })
   @Get('')
-  getAll(@Query() pagination: PaginationDto, @Query() filter: ProductFilterDto) {
-    return this.productService.findAll(pagination.page, pagination.limit, filter);
+  getAll(@Query() query: ProductFilterDto) {
+    const { page = 1, limit = 10, ...filter } = query;
+    return this.productService.findAll(page, limit, filter);
   }
 
   @ApiOperation({ summary: 'Chi tiết sản phẩm theo id' })

@@ -45,7 +45,7 @@ describe('ProductController', () => {
     it('trả về danh sách products với pagination và filter', async () => {
       const paginated = { data: [mockProduct], total: 1, page: 1, limit: 10, totalPages: 1 };
       mockProductService.findAll.mockResolvedValue(paginated);
-      const result = await controller.getAll({ page: 1, limit: 10 }, {});
+      const result = await controller.getAll({ page: 1, limit: 10 });
       expect(result).toEqual(paginated);
       expect(mockProductService.findAll).toHaveBeenCalledWith(1, 10, {});
     });
