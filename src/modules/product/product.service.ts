@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, Inject, NotFoundException, Param } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject, InternalServerErrorException, NotFoundException, Param } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
 import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary';
 import { Repository } from 'typeorm';
@@ -17,6 +18,7 @@ export class ProductService {
         private readonly productRepository: Repository<Product>,
         @Inject(CACHE_MANAGER)
         private readonly cacheManager: Cache,
+        private readonly configService: ConfigService,
     ) {}
 
     async find(@Param('id') id: number) {
@@ -127,10 +129,18 @@ export class ProductService {
             throw new BadRequestException('File upload khong hop le');
         }
 
+        const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME');
+        const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY');
+        const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET');
+
+        if (!cloudName || !apiKey || !apiSecret) {
+            throw new InternalServerErrorException('Cloudinary chua duoc cau hinh tren server');
+        }
+
         cloudinary.config({
-            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-            api_key: process.env.CLOUDINARY_API_KEY,
-            api_secret: process.env.CLOUDINARY_API_SECRET,
+            cloud_name: cloudName,
+            api_key: apiKey,
+            api_secret: apiSecret,
         });
 
         return new Promise((resolve, reject) => {
@@ -143,7 +153,9 @@ export class ProductService {
                 },
                 (error, result) => {
                     if (error || !result) {
-                        return reject(error || new Error('Cloudinary upload did not return a result'));
+                        return reject(new InternalServerErrorException(
+                            error?.message || 'Cloudinary upload did not return a result',
+                        ));
                     }
                     resolve(result);
                 },

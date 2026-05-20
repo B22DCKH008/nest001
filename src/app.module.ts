@@ -56,9 +56,9 @@ import { APP_GUARD } from '@nestjs/core';
         MAIL_USER: Joi.string().allow('').default(''),
         MAIL_PASS: Joi.string().allow('').default(''),
         MAIL_FROM: Joi.string().default('noreply@shopapp.com'),
-        CLOUDINARY_CLOUD_NAME: Joi.string().required(),
-        CLOUDINARY_API_KEY: Joi.string().required(),
-        CLOUDINARY_API_SECRET: Joi.string().required(),
+        CLOUDINARY_CLOUD_NAME: Joi.string().allow('').default(''),
+        CLOUDINARY_API_KEY: Joi.string().allow('').default(''),
+        CLOUDINARY_API_SECRET: Joi.string().allow('').default(''),
       }),
     }),
     CacheModule.registerAsync({

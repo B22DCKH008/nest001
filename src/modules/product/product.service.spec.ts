@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { ConfigService } from '@nestjs/config';
 import { ProductService } from './product.service';
 import { Product } from 'src/entities/Product';
 
@@ -35,6 +36,10 @@ const mockCacheManager = {
   clear: jest.fn(),
 };
 
+const mockConfigService = {
+  get: jest.fn(),
+};
+
 const createMockQueryBuilder = () => {
   const queryBuilder = {
     leftJoinAndSelect: jest.fn().mockReturnThis(),
@@ -56,6 +61,7 @@ describe('ProductService', () => {
         ProductService,
         { provide: getRepositoryToken(Product), useValue: mockRepository },
         { provide: CACHE_MANAGER, useValue: mockCacheManager },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
 
