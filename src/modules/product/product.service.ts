@@ -60,8 +60,9 @@ export class ProductService {
         if (filters!.name?.trim()) {
             query.andWhere('product.name LIKE :name', { name: `%${filters!.name.trim()}%` });
         }
-        if (filters!.categoryId !== undefined) {
-            query.andWhere('category.id = :categoryId', { categoryId: filters!.categoryId });
+        const categoryId = filters!.categoryId ?? filters!.category_id;
+        if (categoryId !== undefined) {
+            query.andWhere('category.id = :categoryId', { categoryId });
         }
         if (filters!.minPrice !== undefined) {
             query.andWhere('product.price >= :minPrice', { minPrice: filters!.minPrice });

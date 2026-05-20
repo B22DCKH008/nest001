@@ -15,6 +15,12 @@ export class ProductFilterDto extends PaginationDto {
   @IsNumber()
   categoryId?: number;
 
+  @ApiPropertyOptional({ example: 1, description: 'Lá»c theo category id' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  category_id?: number;
+
   @ApiPropertyOptional({ example: 100, description: 'Giá tối thiểu' })
   @IsOptional()
   @Type(() => Number)
