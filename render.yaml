@@ -40,7 +40,7 @@ services:
       - key: REDIS_TLS
         value: true
       - key: CORS_ORIGIN
-        sync: false
+        value: http://localhost:5173,https://react001.binhs112022.workers.dev,https://lucent-kangaroo-4cc699.netlify.app
       - key: MAIL_USER
         value: ""
       - key: MAIL_PASS

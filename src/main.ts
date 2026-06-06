@@ -10,6 +10,21 @@ import { join } from 'path';
 import { mkdirSync } from 'fs';
 import helmet from 'helmet';
 
+const defaultCorsOrigins = [
+  'http://localhost:5173',
+  'https://react001.binhs112022.workers.dev',
+  'https://lucent-kangaroo-4cc699.netlify.app',
+];
+
+function getCorsOrigins() {
+  const configuredOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set([...defaultCorsOrigins, ...configuredOrigins]));
+}
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: winstonLogger,
@@ -21,9 +36,16 @@ async function bootstrap() {
   // Security headers
   app.use(helmet());
 
-  // CORS — dùng CORS_ORIGIN env var trên production
+  // CORS - supports multiple frontend deploy URLs separated by commas.
+  const corsOrigins = getCorsOrigins();
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      if (!origin || corsOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`Origin ${origin} is not allowed by CORS`), false);
+    },
     credentials: true,
   });
 
