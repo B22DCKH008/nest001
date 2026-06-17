@@ -6,7 +6,13 @@ import { Cart } from 'src/entities/Cart';
 import { CartItem } from 'src/entities/CartItem';
 import { Product } from 'src/entities/Product';
 
-const mockProduct = { id: 1, name: 'Test Product', price: 100, description: 'Desc' } as Product;
+const mockProduct = {
+  id: 1,
+  name: 'Test Product',
+  price: 100,
+  stock: 5,
+  description: 'Desc',
+} as Product;
 
 const mockCartItem = {
   id: 1,
@@ -50,8 +56,14 @@ describe('CartService', () => {
       providers: [
         CartService,
         { provide: getRepositoryToken(Cart), useValue: mockCartRepository },
-        { provide: getRepositoryToken(CartItem), useValue: mockCartItemRepository },
-        { provide: getRepositoryToken(Product), useValue: mockProductRepository },
+        {
+          provide: getRepositoryToken(CartItem),
+          useValue: mockCartItemRepository,
+        },
+        {
+          provide: getRepositoryToken(Product),
+          useValue: mockProductRepository,
+        },
       ],
     }).compile();
 
@@ -85,12 +97,25 @@ describe('CartService', () => {
   describe('addItem', () => {
     it('throw NotFoundException khi product không tồn tại', async () => {
       mockProductRepository.findOneBy.mockResolvedValue(null);
-      await expect(service.addItem(1, { product_id: 999, quantity: 1 })).rejects.toThrow(NotFoundException);
+      await expect(
+        service.addItem(1, { product_id: 999, quantity: 1 }),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('cộng quantity khi product đã có trong cart', async () => {
-      const inlineItem = { id: 1, product: { id: 1 }, quantity: 2, created_at: new Date(), updated_at: new Date() } as any;
-      const cartWithItem = { id: 1, user: { id: 1 }, items: [inlineItem], updated_at: new Date() } as any;
+      const inlineItem = {
+        id: 1,
+        product: { id: 1 },
+        quantity: 2,
+        created_at: new Date(),
+        updated_at: new Date(),
+      } as any;
+      const cartWithItem = {
+        id: 1,
+        user: { id: 1 },
+        items: [inlineItem],
+        updated_at: new Date(),
+      } as any;
 
       mockProductRepository.findOneBy.mockResolvedValue(mockProduct);
       mockCartItemRepository.save.mockResolvedValue({});
@@ -105,11 +130,37 @@ describe('CartService', () => {
       expect(inlineItem.quantity).toBe(3);
     });
 
+    it('throw BadRequestException khi thêm quá tồn kho', async () => {
+      const inlineItem = {
+        id: 1,
+        product: { id: 1 },
+        quantity: 4,
+        created_at: new Date(),
+        updated_at: new Date(),
+      } as any;
+      const cartWithItem = {
+        id: 1,
+        user: { id: 1 },
+        items: [inlineItem],
+        updated_at: new Date(),
+      } as any;
+
+      mockProductRepository.findOneBy.mockResolvedValue(mockProduct);
+      jest.spyOn(service, 'getOrCreateCart').mockResolvedValue(cartWithItem);
+
+      await expect(
+        service.addItem(1, { product_id: 1, quantity: 2 }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('tạo CartItem mới khi product chưa có trong cart', async () => {
       const emptyCart = { ...mockCart, items: [] };
       mockProductRepository.findOneBy.mockResolvedValue(mockProduct);
       mockCartRepository.findOne.mockResolvedValue(emptyCart);
-      mockCartItemRepository.create.mockReturnValue({ product: { id: 2 }, quantity: 1 });
+      mockCartItemRepository.create.mockReturnValue({
+        product: { id: 2 },
+        quantity: 1,
+      });
       mockCartItemRepository.save.mockResolvedValue({});
       mockCartRepository.update.mockResolvedValue({});
 
@@ -123,12 +174,16 @@ describe('CartService', () => {
   describe('updateItem', () => {
     it('throw NotFoundException khi item không tồn tại', async () => {
       mockCartItemRepository.findOne.mockResolvedValue(null);
-      await expect(service.updateItem(1, 999, { quantity: 2 })).rejects.toThrow(NotFoundException);
+      await expect(service.updateItem(1, 999, { quantity: 2 })).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('throw NotFoundException khi item không thuộc user', async () => {
       mockCartItemRepository.findOne.mockResolvedValue(null);
-      await expect(service.updateItem(1, 1, { quantity: 2 })).rejects.toThrow(NotFoundException);
+      await expect(service.updateItem(1, 1, { quantity: 2 })).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('xóa item khi quantity = 0', async () => {
@@ -149,7 +204,10 @@ describe('CartService', () => {
         ...mockCartItem,
         cart: { user: { id: 1 } },
       });
-      mockCartItemRepository.save.mockResolvedValue({ ...mockCartItem, quantity: 5 });
+      mockCartItemRepository.save.mockResolvedValue({
+        ...mockCartItem,
+        quantity: 5,
+      });
       mockCartRepository.findOne.mockResolvedValue(mockCart);
 
       await service.updateItem(1, 1, { quantity: 5 });
@@ -158,12 +216,25 @@ describe('CartService', () => {
         expect.objectContaining({ quantity: 5 }),
       );
     });
+
+    it('throw BadRequestException khi cập nhật quá tồn kho', async () => {
+      mockCartItemRepository.findOne.mockResolvedValue({
+        ...mockCartItem,
+        cart: { user: { id: 1 } },
+      });
+
+      await expect(service.updateItem(1, 1, { quantity: 6 })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
   });
 
   describe('removeItem', () => {
     it('throw NotFoundException khi item không tồn tại', async () => {
       mockCartItemRepository.findOne.mockResolvedValue(null);
-      await expect(service.removeItem(1, 999)).rejects.toThrow(NotFoundException);
+      await expect(service.removeItem(1, 999)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('xóa item thành công', async () => {
@@ -192,7 +263,9 @@ describe('CartService', () => {
 
       const result = await service.clearCart(1);
 
-      expect(mockCartItemRepository.delete).toHaveBeenCalledWith({ cart: { id: 1 } });
+      expect(mockCartItemRepository.delete).toHaveBeenCalledWith({
+        cart: { id: 1 },
+      });
       expect(result.items).toEqual([]);
     });
   });

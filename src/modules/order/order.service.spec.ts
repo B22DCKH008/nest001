@@ -1,18 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { getQueueToken } from '@nestjs/bullmq';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { Order } from 'src/entities/Order';
 import { OrderItem } from 'src/entities/OrderItem';
 import { User } from 'src/entities/User';
-import { CartService } from 'src/modules/cart/cart.service';
+import { DataSource } from 'typeorm';
+import { Cart } from 'src/entities/Cart';
+import { CartItem } from 'src/entities/CartItem';
+import { Product } from 'src/entities/Product';
 
 const mockCart = {
   id: 1,
   items: [
-    { product: { id: 1, name: 'Product A', price: 100 }, quantity: 2 },
-    { product: { id: 2, name: 'Product B', price: 50 }, quantity: 1 },
+    {
+      product: { id: 1, name: 'Product A', price: 100, stock: 10 },
+      quantity: 2,
+    },
+    { product: { id: 2, name: 'Product B', price: 50, stock: 8 }, quantity: 1 },
   ],
 };
 
@@ -45,13 +52,51 @@ const mockUserRepository = {
   findOne: jest.fn(),
 };
 
-const mockCartService = {
-  getOrCreateCart: jest.fn(),
-  clearCart: jest.fn(),
-};
-
 const mockOrderQueue = {
   add: jest.fn(),
+};
+
+const mockCacheManager = {
+  clear: jest.fn(),
+};
+
+const mockTransactionOrderRepository = {
+  create: jest.fn(),
+  save: jest.fn(),
+};
+
+const mockTransactionOrderItemRepository = {
+  create: jest.fn(),
+  save: jest.fn(),
+};
+
+const mockTransactionCartRepository = {
+  findOne: jest.fn(),
+  update: jest.fn(),
+};
+
+const mockTransactionCartItemRepository = {
+  delete: jest.fn(),
+};
+
+const mockTransactionProductRepository = {
+  findOne: jest.fn(),
+  save: jest.fn(),
+};
+
+const mockTransactionManager = {
+  getRepository: jest.fn((entity) => {
+    if (entity === Order) return mockTransactionOrderRepository;
+    if (entity === OrderItem) return mockTransactionOrderItemRepository;
+    if (entity === Cart) return mockTransactionCartRepository;
+    if (entity === CartItem) return mockTransactionCartItemRepository;
+    if (entity === Product) return mockTransactionProductRepository;
+    throw new Error('Unknown repository');
+  }),
+};
+
+const mockDataSource = {
+  transaction: jest.fn((callback) => callback(mockTransactionManager)),
 };
 
 describe('OrderService', () => {
@@ -62,9 +107,13 @@ describe('OrderService', () => {
       providers: [
         OrderService,
         { provide: getRepositoryToken(Order), useValue: mockOrderRepository },
-        { provide: getRepositoryToken(OrderItem), useValue: mockOrderItemRepository },
+        {
+          provide: getRepositoryToken(OrderItem),
+          useValue: mockOrderItemRepository,
+        },
         { provide: getRepositoryToken(User), useValue: mockUserRepository },
-        { provide: CartService, useValue: mockCartService },
+        { provide: DataSource, useValue: mockDataSource },
+        { provide: CACHE_MANAGER, useValue: mockCacheManager },
         { provide: getQueueToken('order'), useValue: mockOrderQueue },
       ],
     }).compile();
@@ -75,28 +124,67 @@ describe('OrderService', () => {
 
   describe('checkout', () => {
     it('throw BadRequestException khi cart trống', async () => {
-      mockCartService.getOrCreateCart.mockResolvedValue({ id: 1, items: [] });
+      mockTransactionCartRepository.findOne.mockResolvedValue({
+        id: 1,
+        items: [],
+      });
       await expect(service.checkout(1)).rejects.toThrow(BadRequestException);
     });
 
     it('tạo order từ cart, push job order.created, xóa cart sau khi checkout', async () => {
-      mockCartService.getOrCreateCart.mockResolvedValue(mockCart);
-      mockOrderRepository.create.mockReturnValue({ ...mockOrder });
-      mockOrderRepository.save.mockResolvedValue(mockOrder);
-      mockOrderItemRepository.create.mockImplementation((dto) => dto);
-      mockOrderItemRepository.save.mockResolvedValue([]);
-      mockCartService.clearCart.mockResolvedValue(undefined);
+      mockTransactionCartRepository.findOne.mockResolvedValue(mockCart);
+      mockTransactionOrderRepository.create.mockImplementation((dto) => ({
+        id: 1,
+        ...dto,
+      }));
+      mockTransactionOrderRepository.save.mockImplementation((entity) =>
+        Promise.resolve(entity),
+      );
+      mockTransactionOrderItemRepository.create.mockImplementation(
+        (dto) => dto,
+      );
+      mockTransactionOrderItemRepository.save.mockResolvedValue([]);
+      mockTransactionProductRepository.findOne
+        .mockResolvedValueOnce({
+          id: 1,
+          name: 'Product A',
+          price: 100,
+          stock: 10,
+          updated_at: new Date(),
+        })
+        .mockResolvedValueOnce({
+          id: 2,
+          name: 'Product B',
+          price: 50,
+          stock: 8,
+          updated_at: new Date(),
+        });
+      mockTransactionProductRepository.save.mockResolvedValue({});
+      mockTransactionCartItemRepository.delete.mockResolvedValue({});
+      mockTransactionCartRepository.update.mockResolvedValue({});
       mockUserRepository.findOne.mockResolvedValue(mockUser);
       mockOrderQueue.add.mockResolvedValue({ id: 'job-1' });
       mockOrderRepository.findOne.mockResolvedValue(mockOrder);
 
       const result = await service.checkout(1);
 
-      expect(mockOrderRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'pending', total_amount: 250 }),
+      expect(mockTransactionOrderRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'pending', total_amount: 0 }),
       );
-      expect(mockOrderItemRepository.save).toHaveBeenCalledTimes(1);
-      expect(mockCartService.clearCart).toHaveBeenCalledWith(1);
+      expect(mockTransactionOrderRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ total_amount: 250 }),
+      );
+      expect(mockTransactionProductRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, stock: 8 }),
+      );
+      expect(mockTransactionProductRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 2, stock: 7 }),
+      );
+      expect(mockTransactionOrderItemRepository.save).toHaveBeenCalledTimes(1);
+      expect(mockTransactionCartItemRepository.delete).toHaveBeenCalledWith({
+        cart: { id: 1 },
+      });
+      expect(mockCacheManager.clear).toHaveBeenCalledTimes(1);
       expect(mockOrderQueue.add).toHaveBeenCalledWith(
         'order.created',
         expect.objectContaining({
@@ -104,8 +192,18 @@ describe('OrderService', () => {
           email: mockUser.email,
           total_amount: 250,
           items: [
-            { product_name: 'Product A', product_price: 100, quantity: 2, subtotal: 200 },
-            { product_name: 'Product B', product_price: 50, quantity: 1, subtotal: 50 },
+            {
+              product_name: 'Product A',
+              product_price: 100,
+              quantity: 2,
+              subtotal: 200,
+            },
+            {
+              product_name: 'Product B',
+              product_price: 50,
+              quantity: 1,
+              subtotal: 50,
+            },
           ],
         }),
       );
@@ -145,7 +243,10 @@ describe('OrderService', () => {
     it('hủy order thành công khi status là pending', async () => {
       const pendingOrder = { ...mockOrder, status: 'pending' };
       mockOrderRepository.findOne.mockResolvedValue(pendingOrder);
-      mockOrderRepository.save.mockResolvedValue({ ...pendingOrder, status: 'cancelled' });
+      mockOrderRepository.save.mockResolvedValue({
+        ...pendingOrder,
+        status: 'cancelled',
+      });
 
       const result = await service.cancel(1, 1);
 
@@ -156,7 +257,10 @@ describe('OrderService', () => {
     });
 
     it('throw BadRequestException khi order không phải pending', async () => {
-      mockOrderRepository.findOne.mockResolvedValue({ ...mockOrder, status: 'confirmed' });
+      mockOrderRepository.findOne.mockResolvedValue({
+        ...mockOrder,
+        status: 'confirmed',
+      });
       await expect(service.cancel(1, 1)).rejects.toThrow(BadRequestException);
     });
   });
@@ -179,7 +283,10 @@ describe('OrderService', () => {
   describe('updateStatus', () => {
     it('cập nhật status thành công', async () => {
       mockOrderRepository.findOne.mockResolvedValue(mockOrder);
-      mockOrderRepository.save.mockResolvedValue({ ...mockOrder, status: 'confirmed' });
+      mockOrderRepository.save.mockResolvedValue({
+        ...mockOrder,
+        status: 'confirmed',
+      });
 
       const result = await service.updateStatus(1, { status: 'confirmed' });
 
@@ -188,7 +295,9 @@ describe('OrderService', () => {
 
     it('throw NotFoundException khi order không tồn tại', async () => {
       mockOrderRepository.findOne.mockResolvedValue(null);
-      await expect(service.updateStatus(999, { status: 'confirmed' })).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateStatus(999, { status: 'confirmed' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

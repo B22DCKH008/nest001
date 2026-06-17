@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cart } from 'src/entities/Cart';
@@ -39,14 +43,28 @@ export class CartService {
   }
 
   async addItem(userId: number, dto: AddCartItemDto): Promise<Cart> {
-    const product = await this.productRepository.findOneBy({ id: dto.product_id });
+    const product = await this.productRepository.findOneBy({
+      id: dto.product_id,
+    });
     if (!product) {
       throw new NotFoundException(`Sản phẩm không tìm thấy`);
+    }
+    if (product.stock <= 0) {
+      throw new BadRequestException('Sản phẩm đã hết hàng');
     }
 
     const cart = await this.getOrCreateCart(userId);
 
-    const existingItem = cart.items?.find((i) => i.product.id === dto.product_id);
+    const existingItem = cart.items?.find(
+      (i) => i.product.id === dto.product_id,
+    );
+    const nextQuantity = (existingItem?.quantity ?? 0) + dto.quantity;
+    if (nextQuantity > product.stock) {
+      throw new BadRequestException(
+        `Chỉ còn ${product.stock} sản phẩm trong kho`,
+      );
+    }
+
     if (existingItem) {
       existingItem.quantity += dto.quantity;
       existingItem.updated_at = new Date();
@@ -68,9 +86,14 @@ export class CartService {
     return this.getOrCreateCart(userId);
   }
 
-  async updateItem(userId: number, itemId: number, dto: UpdateCartItemDto): Promise<Cart> {
+  async updateItem(
+    userId: number,
+    itemId: number,
+    dto: UpdateCartItemDto,
+  ): Promise<Cart> {
     const item = await this.cartItemRepository.findOne({
       where: { id: itemId, cart: { user: { id: userId } } },
+      relations: ['product'],
     });
 
     if (!item) {
@@ -80,6 +103,14 @@ export class CartService {
     if (dto.quantity === 0) {
       await this.cartItemRepository.delete(itemId);
     } else {
+      if (item.product.stock <= 0) {
+        throw new BadRequestException('Sản phẩm đã hết hàng');
+      }
+      if (dto.quantity > item.product.stock) {
+        throw new BadRequestException(
+          `Chỉ còn ${item.product.stock} sản phẩm trong kho`,
+        );
+      }
       item.quantity = dto.quantity;
       item.updated_at = new Date();
       await this.cartItemRepository.save(item);

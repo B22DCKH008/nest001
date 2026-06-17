@@ -10,6 +10,7 @@ const mockProduct: Product = {
   id: 1,
   name: 'Test Product',
   price: 100,
+  stock: 5,
   description: 'Test description',
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),
@@ -76,22 +77,40 @@ describe('ProductService', () => {
 
       const result = await service.findAll(1, 10);
 
-      expect(mockCacheManager.get).toHaveBeenCalledWith('products_page_1_limit_10');
+      expect(mockCacheManager.get).toHaveBeenCalledWith(
+        'products_page_1_limit_10',
+      );
       expect(mockRepository.findAndCount).toHaveBeenCalledTimes(1);
       expect(mockCacheManager.set).toHaveBeenCalledWith(
         'products_page_1_limit_10',
-        expect.objectContaining({ data: [mockProduct], total: 1, page: 1, limit: 10, totalPages: 1 }),
+        expect.objectContaining({
+          data: [mockProduct],
+          total: 1,
+          page: 1,
+          limit: 10,
+          totalPages: 1,
+        }),
       );
-      expect(result).toEqual(expect.objectContaining({ data: [mockProduct], total: 1 }));
+      expect(result).toEqual(
+        expect.objectContaining({ data: [mockProduct], total: 1 }),
+      );
     });
 
     it('cache hit: trả về từ cache, không query DB', async () => {
-      const cached = { data: [mockProduct], total: 1, page: 1, limit: 10, totalPages: 1 };
+      const cached = {
+        data: [mockProduct],
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      };
       mockCacheManager.get.mockResolvedValue(cached);
 
       const result = await service.findAll(1, 10);
 
-      expect(mockCacheManager.get).toHaveBeenCalledWith('products_page_1_limit_10');
+      expect(mockCacheManager.get).toHaveBeenCalledWith(
+        'products_page_1_limit_10',
+      );
       expect(mockRepository.findAndCount).not.toHaveBeenCalled();
       expect(result).toEqual(cached);
     });
@@ -102,7 +121,9 @@ describe('ProductService', () => {
 
       await service.findAll();
 
-      expect(mockCacheManager.get).toHaveBeenCalledWith('products_page_1_limit_10');
+      expect(mockCacheManager.get).toHaveBeenCalledWith(
+        'products_page_1_limit_10',
+      );
     });
 
     it('co filter name thi dung query builder, khong check cache', async () => {
@@ -143,7 +164,10 @@ describe('ProductService', () => {
 
       const result = await service.restore(1);
 
-      expect(mockRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 }, withDeleted: true });
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1 },
+        withDeleted: true,
+      });
       expect(mockRepository.restore).toHaveBeenCalledWith(1);
       expect(mockCacheManager.clear).toHaveBeenCalledTimes(1);
       expect(result).toEqual(restoredProduct);
@@ -155,7 +179,10 @@ describe('ProductService', () => {
     });
 
     it('throw BadRequestException khi product chưa bị xóa', async () => {
-      mockRepository.findOne.mockResolvedValue({ ...mockProduct, deleted_at: null });
+      mockRepository.findOne.mockResolvedValue({
+        ...mockProduct,
+        deleted_at: null,
+      });
       await expect(service.restore(1)).rejects.toThrow(BadRequestException);
     });
   });
@@ -165,7 +192,10 @@ describe('ProductService', () => {
       mockRepository.findOne.mockResolvedValue(mockProduct);
       const result = await service.find(1);
       expect(result).toEqual(mockProduct);
-      expect(mockRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 }, relations: ['category'] });
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1 },
+        relations: ['category'],
+      });
     });
 
     it('throw NotFoundException khi không tìm thấy', async () => {
@@ -176,7 +206,12 @@ describe('ProductService', () => {
 
   describe('create', () => {
     it('tạo product với timestamps, clear cache, trả về product đã lưu', async () => {
-      const dto = { name: 'New Product', price: 200, description: 'Desc' };
+      const dto = {
+        name: 'New Product',
+        price: 200,
+        stock: 10,
+        description: 'Desc',
+      };
       const built = { ...dto } as Product;
       mockRepository.create.mockReturnValue(built);
       mockRepository.save.mockResolvedValue({ ...built, id: 2 });
@@ -202,8 +237,13 @@ describe('ProductService', () => {
 
       const result = await service.update(1, { name: 'Updated' });
 
-      expect(mockRepository.save).toHaveBeenCalledWith(expect.objectContaining({ id: 1, name: 'Updated' }));
-      expect(mockRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 }, relations: ['category'] });
+      expect(mockRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, name: 'Updated' }),
+      );
+      expect(mockRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1 },
+        relations: ['category'],
+      });
       expect(mockCacheManager.clear).toHaveBeenCalledTimes(1);
       expect(result).toEqual(updated);
     });

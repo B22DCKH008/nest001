@@ -9,6 +9,7 @@ const mockProduct = {
   id: 1,
   name: 'Test Product',
   price: 100,
+  stock: 5,
   description: 'Test description',
   created_at: new Date('2024-01-01'),
   updated_at: new Date('2024-01-01'),
@@ -43,7 +44,13 @@ describe('ProductController', () => {
 
   describe('getAll', () => {
     it('trả về danh sách products với pagination và filter', async () => {
-      const paginated = { data: [mockProduct], total: 1, page: 1, limit: 10, totalPages: 1 };
+      const paginated = {
+        data: [mockProduct],
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      };
       mockProductService.findAll.mockResolvedValue(paginated);
       const result = await controller.getAll({ page: 1, limit: 10 });
       expect(result).toEqual(paginated);
@@ -67,7 +74,12 @@ describe('ProductController', () => {
 
   describe('create', () => {
     it('tạo và trả về product mới', async () => {
-      const dto = { name: 'New Product', price: 200, description: 'Desc' };
+      const dto = {
+        name: 'New Product',
+        price: 200,
+        stock: 10,
+        description: 'Desc',
+      };
       mockProductService.create.mockResolvedValue({ ...mockProduct, ...dto });
       const result = await controller.create(dto as any);
       expect(mockProductService.create).toHaveBeenCalledWith(dto);

@@ -1,4 +1,12 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, DeleteDateColumn, OneToMany } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  DeleteDateColumn,
+  OneToMany,
+} from 'typeorm';
 import { Category } from './Category';
 import { OrderItem } from './OrderItem';
 import { CartItem } from './CartItem';
@@ -14,17 +22,25 @@ export class Product {
   @Column()
   price: number;
 
+  @Column({ default: 0 })
+  stock: number;
+
   @Column()
   description: string;
 
-  @ManyToOne(() => Category, (category) => category.products, { nullable: true, eager: false })
+  @ManyToOne(() => Category, (category) => category.products, {
+    nullable: true,
+    eager: false,
+  })
   @JoinColumn({ name: 'category_id' })
   category?: Category;
 
   @OneToMany(() => CartItem, (cartItem) => cartItem.product, { cascade: true })
   cartItems: CartItem[];
 
-  @OneToMany(() => OrderItem, (orderItem) => orderItem.product, { cascade: true })
+  @OneToMany(() => OrderItem, (orderItem) => orderItem.product, {
+    cascade: true,
+  })
   orderItems: OrderItem[];
 
   @Column({ type: 'varchar', length: 255, nullable: true })
